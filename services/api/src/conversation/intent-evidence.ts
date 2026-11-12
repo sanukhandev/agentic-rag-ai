@@ -80,7 +80,10 @@ const globalCancellation = (message: string): boolean =>
 const activeClauses = (message: string): string[] =>
   contrastClauses(message).filter(part => !hasRejection(part));
 const hasInitiationRequest = (message: string): boolean =>
-  /(?:^|\b)(?:i (?:want|would like|need|am ready|m ready) to|let's|let us|please|go ahead and|we (?:want|need) to|i(?:'m| am) ready to)\s+(?:go ahead (?:and |to )?|now )?(?:start|begin|register|form|incorporate|set up|open|establish|proceed(?: with)?|get started(?: with)?)\b/u.test(message)
+  /(?:^|\b)(?:let's|let us|go ahead|please)?\s*(?:go ahead with|proceed with)\b/u.test(message)
+  || /(?:^|\b)(?:that sounds good|sounds good)\s*[-—–,.]*\s*(?:let(?:'s| us)\s+)?(?:go ahead|proceed)\b/u.test(message)
+  || /\b(?:confirmed|confirm)[.,!]?\s*(?:start|begin|proceed|go ahead|set up|open)\b/u.test(message)
+  || /(?:^|\b)(?:i (?:want|would like|need|am ready|m ready) to|let's|let us|please|go ahead and|we (?:want|need) to|i(?:'m| am) ready to)\s+(?:go ahead (?:and |to )?|now )?(?:start|begin|register|form|incorporate|set up|open|establish|proceed(?: with)?|get started(?: with)?)\b/u.test(message)
   || /^(?:start|begin|register|form|incorporate|set up|open|establish|proceed|let's go ahead|let us go ahead)\b/u.test(message)
   || /\b(?:i (?:want|would like|need)(?: to)?\s+)?(?:a|my|the)\s+(?:company|trade|business)\s+(?:license|licence)\b/u.test(message)
   || /\bi(?:'m| am)\s+(?:opening|starting|registering|establishing|forming|incorporating)\b/u.test(message)

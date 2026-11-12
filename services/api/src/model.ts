@@ -217,9 +217,13 @@ export const extractLeadData = (text: string): LeadData => {
   if (phone) data.phone = phone;
   return data;
 };
-export const normalizePendingLeadName = (text: string): string => text.trim()
-  .replace(/^(?:my\s+name\s+is|i\s+am|i['’]?m|i\s+m)\s+/iu, '')
-  .replace(/[.!?]+$/u, '').trim();
+export const normalizePendingLeadName = (text: string): string => {
+  const value = text.trim();
+  const introduced = value.match(/^(?:name|full\s+name)\s*[:=-]\s*(.+)$/iu)
+    ?? value.match(/\bunder\s+(.+)$/iu)
+    ?? value.match(/^(?:my\s+name\s+is|i\s+am|i['’]?m|i\s+m)\s+(.+)$/iu);
+  return (introduced?.[1] ?? value).replace(/[.!?]+$/u, '').trim();
+};
 export const mergeLeadData = (...values: LeadData[]): LeadData => {
   const merged: LeadData = {};
   for (const value of values) {

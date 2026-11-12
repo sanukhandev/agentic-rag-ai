@@ -19,7 +19,7 @@ describe('ANCFZ seven-stage draft catalog',()=>{
    const writes=catalog.sheets.ToolBindings.filter((x:{sideEffectClass:string})=>x.sideEffectClass!=='read_only');
    expect(writes).toHaveLength(10);
    expect(writes.every((x:{consent:string,confirmation:string})=>x.consent==='purpose_specific'&&x.confirmation==='explicit_customer')).toBe(true);
-   expect(catalog.sheets.WorkflowBindings.filter((x:{enabled:boolean})=>x.enabled).map((x:{workflowKey:string})=>x.workflowKey)).toEqual(['crm.lead.create','sales.quote.generate']);
+   expect(catalog.sheets.WorkflowBindings.filter((x:{enabled:boolean})=>x.enabled).map((x:{workflowKey:string})=>x.workflowKey)).toEqual(['crm.lead.create','sales.quote.generate','document.sf02.upload']);
    for(const stageKey of stages) expect(writes.some((x:{stageKey:string})=>x.stageKey===stageKey)).toBe(true);
  });
 });

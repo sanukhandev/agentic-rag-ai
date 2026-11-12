@@ -39,6 +39,7 @@ describe('V2 conversation quality boundaries', () => {
 
   it.each([
     ['What are the package options?', true],
+    ['Show approved company packages.', true],
     ['What is the quote for the selected package?', false],
     ['Can you prepare a quotation for this package?', false],
   ])('keeps package summary fallback routing for %s=%s', (message, expected) => {

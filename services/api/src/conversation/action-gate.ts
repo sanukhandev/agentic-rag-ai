@@ -100,8 +100,11 @@ const validateProposal = (proposalInput: unknown, catalog: CatalogV2Document, co
   if (proposal.actionRevision !== context.expectedActionRevision) return denied(['action_revision_stale']);
   const requiredPolicies = context.pinnedCatalogVersion?.catalog.sheets.RequirementPolicies ?? [];
   const missing = binding.requiredKeys.filter((requiredKey) => {
-    if (!context.verifiedRequirementKeys.includes(requiredKey)) return true;
     const policy = requiredPolicies.find(row => row.goalKey === proposal.goalKey && row.stageKey === proposal.stageKey && row.requirementKey === requiredKey);
+    // Confirmation is a separate customer step. A proposal must be allowed to
+    // exist before that confirmation is recorded.
+    if (policy?.type === 'confirmation') return false;
+    if (!context.verifiedRequirementKeys.includes(requiredKey)) return true;
     if (!policy) return true;
     if (policy.type !== 'fact') return false;
     const fact = context.intentDocument?.verifiedFacts?.[requiredKey];

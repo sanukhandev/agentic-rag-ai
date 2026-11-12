@@ -299,3 +299,13 @@ def test_prefetched_approved_knowledge_is_in_model_context():
     agent = BoundedConversationAgent(FakeClient([]), FakeGateway(), "test-model")
     payload = json.loads(agent._input(current))
     assert payload["approvedKnowledge"] == [item]
+
+
+def test_http_tool_gateway_timeout_bounded():
+    from gateway.agent import HttpToolGateway
+    gateway = HttpToolGateway("http://127.0.0.1:4000", "test-key")
+    assert gateway.timeout == 35.0
+    gateway_custom = HttpToolGateway("http://127.0.0.1:4000", "test-key", timeout=45.0)
+    assert gateway_custom.timeout == 45.0
+    gateway_capped = HttpToolGateway("http://127.0.0.1:4000", "test-key", timeout=120.0)
+    assert gateway_capped.timeout == 60.0

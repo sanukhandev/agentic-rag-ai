@@ -1224,7 +1224,7 @@
         "consent": "purpose_specific",
         "confirmation": "explicit_customer",
         "registryKey": "document.sf02.upload",
-        "enabled": false
+        "enabled": true
       },
       {
         "toolKey": "invoice.issue",
@@ -1346,7 +1346,7 @@
         "payloadSchemaRef": "payload.document.sf02.upload.v1",
         "callbackSchemaRef": "callback.document.sf02.upload.v1",
         "evidencePolicyKey": "document.sf02_verified",
-        "enabled": false
+        "enabled": true
       },
       {
         "workflowKey": "invoice.issue",

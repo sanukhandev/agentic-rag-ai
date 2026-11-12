@@ -55,7 +55,19 @@ describe('v2 catalog action gate', () => {
     expect(validateV2ActionProposal({ ...proposal, arguments: { unexpected: 'x' } }, catalog, baseContext()).reasons).toContain('arguments_not_catalog_scoped');
     expect(validateV2ActionProposal(proposal, fixture, baseContext()).reasons).toContain('tool_inactive');
     expect(validateV2ActionProposal({ ...proposal, goalKey: 'anc.other_goal' }, catalog, baseContext()).reasons).toContain('goal_mismatch');
-    expect(validateV2ActionProposal(proposal, catalog, baseContext({ verifiedRequirementKeys: [] })).reasons).toContain('requirements_missing');
+    const incompleteCatalog = structuredClone(catalog);
+    incompleteCatalog.sheets.ToolBindings.find((binding) => binding.toolKey === proposal.toolKey)!.requiredKeys = ['account_confirmation', 'required_fact'];
+    const incompletePin = catalogV2VersionRef(incompleteCatalog);
+    const incompleteLifecycle = structuredClone(makeLifecycle());
+    for (const stage of Object.values(incompleteLifecycle.stages)) stage.evidence.catalogVersionRef = incompletePin;
+    expect(validateV2ActionProposal(proposal, incompleteCatalog, baseContext({
+      catalogVersionId: incompletePin,
+      verifiedRequirementKeys: [],
+      purposeConsentScope: v2ActionConsentScope({ catalogVersionId: incompletePin }, proposal.toolKey),
+      intentDocument: { ...baseContext().intentDocument!, catalogVersionRef: incompletePin },
+      lifecycle: incompleteLifecycle,
+      pinnedCatalogVersion: { ...baseContext().pinnedCatalogVersion!, catalogVersionRef: incompletePin, catalog: incompleteCatalog },
+    })).reasons).toContain('requirements_missing');
     expect(validateV2ActionProposal(proposal, catalog, baseContext({ purposeConsentGranted: false, purposeConsentScope: null })).reasons).toContain('purpose_consent_required');
     expect(validateV2ActionProposal({ ...proposal, actionRevision: 2 }, catalog, baseContext()).reasons).toContain('action_revision_stale');
     expect(validateV2ActionProposal({ ...proposal, arguments: { endpoint: 'https://attacker.invalid', authorization: 'Bearer secret' } }, catalog, baseContext()).reasons).toContain('arguments_not_catalog_scoped');

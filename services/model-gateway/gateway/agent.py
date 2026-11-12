@@ -63,14 +63,14 @@ class ToolGateway(Protocol):
 
 
 class HttpToolGateway:
-    def __init__(self, base_url: str, service_key: str, timeout: float = 10.0) -> None:
+    def __init__(self, base_url: str, service_key: str, timeout: float = 35.0) -> None:
         if not base_url.startswith("http://") and not base_url.startswith("https://"):
             raise ValueError("tool gateway URL must be http(s)")
         if not service_key:
             raise ValueError("tool gateway service key is required")
         self.base_url = base_url.rstrip("/")
         self.service_key = service_key
-        self.timeout = max(1.0, min(30.0, timeout))
+        self.timeout = max(1.0, min(60.0, timeout))
 
     async def execute(self, request: ToolRequestV2) -> ToolResultV2:
         try:

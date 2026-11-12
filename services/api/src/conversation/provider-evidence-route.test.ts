@@ -383,7 +383,7 @@ describe('V2 provider evidence route', () => {
     expect(confirmed.status, JSON.stringify(confirmed.body)).toBe(200);
     const config = await request(test.runtime.app).get(`/api/v1/chat/sessions/${test.session.id}/documents/config`).set('origin', 'http://localhost');
     expect(config.status, JSON.stringify(config.body)).toBe(200);
-    expect(config.body).toMatchObject({ enabled: true, workflowKey: 'anc.document.ocr.extract', requirements: expect.arrayContaining([expect.objectContaining({ documentType: 'identity_document' })]) });
+    expect(config.body).toMatchObject({ enabled: true, workflowKey: 'document.sf02.upload', requirements: expect.arrayContaining([expect.objectContaining({ documentType: 'identity_document' })]) });
     const pdf = Buffer.from('%PDF-1.4\nsynthetic identity fixture\n%%EOF').toString('base64');
     const upload = await request(test.runtime.app).post(`/api/v1/chat/sessions/${test.session.id}/documents`).set('origin', 'http://localhost').send({ fileName: 'identity.pdf', mimeType: 'application/pdf', contentBase64: pdf, processingConsent: true, primaryIntentKey: 'anc.company_formation' });
     expect(upload.status, JSON.stringify(upload.body)).toBe(202);

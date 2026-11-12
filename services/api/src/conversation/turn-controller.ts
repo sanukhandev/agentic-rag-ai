@@ -190,7 +190,7 @@ const explicitLeadSubmissionRequest = (message: string): boolean =>
   || /\bgo\s+ahead\b[\s\S]{0,40}\b(?:with|and)\b[\s\S]{0,40}\blead\b/iu.test(message);
 
 const explicitLeadActionConfirmation = (message: string): boolean =>
-  /\b(?:confirm|confirmed|authorize|authorized|approve|approved)\b[\s\S]{0,80}\b(?:lead|submission|submit)\b/iu.test(message)
+  /\b(?:confirm\w*|authoriz\w*|approv\w*)\b[\s\S]{0,80}\b(?:lead|submission|submit)\b/iu.test(message)
   || /\bconfirm\s+the\s+authorized\s+submission\b/iu.test(message)
   || /\byes,?\s+(?:please\s+)?submit\s+(?:the\s+)?lead\b/iu.test(message);
 
@@ -198,10 +198,17 @@ const explicitQuotationConsent = (message: string): boolean =>
   /\b(?:yes|okay|ok|sure|agree|consent|permission|approve|proceed)\b[\s\S]{0,80}\b(?:quote|quotation)\b/iu.test(message)
   || /\b(?:consent|permission|agree|approve)\b[\s\S]{0,80}\b(?:generate|prepare|issue)\b[\s\S]{0,40}\b(?:quote|quotation)\b/iu.test(message);
 
+const explicitDocumentProcessingRefusal = (message: string): boolean =>
+  /\b(?:do not|don't|cannot|can't|won't|will not|refuse|reject)\s+(?:consent|agree|permit|allow|provide|share)\b[\s\S]{0,80}\b(?:document|documents|passport|id|identity)\b/iu.test(message)
+  || /\b(?:no\s+consent|without\s+(?:sharing|providing|processing)?)\b[\s\S]{0,80}\b(?:document|documents|passport|id|identity)\b/iu.test(message)
+  || /\b(?:not\s+consenting|not\s+agreeing)\b[\s\S]{0,80}\b(?:document|documents|passport|id|identity)\b/iu.test(message);
+
 const explicitDocumentProcessingConsent = (message: string): boolean =>
-  /\b(?:yes|agree|consent|approve|ready|upload|provide|have)\b[\s\S]{0,80}\b(?:document|documents|passport|id|identity)\b/iu.test(message)
-  || /\b(?:document|documents|passport)\b[\s\S]{0,80}\b(?:ready|consent|agree|available)\b/iu.test(message)
-  || /\b(?:i\s+consent|i\s+agree)\s+to\s+document\b/iu.test(message);
+  !explicitDocumentProcessingRefusal(message) && (
+    /\b(?:yes|agree|consent|approve|ready|upload|provide|have)\b[\s\S]{0,80}\b(?:document|documents|passport|id|identity)\b/iu.test(message)
+    || /\b(?:document|documents|passport)\b[\s\S]{0,80}\b(?:ready|consent|agree|available)\b/iu.test(message)
+    || /\b(?:i\s+consent|i\s+agree)\s+to\s+document\b/iu.test(message)
+  );
 
 const explicitQuotationRequest = (message: string): boolean =>
   /\b(?:prepare|generate|create|get|issue|request|send)\b[\s\S]{0,80}\b(?:quote|quotation)\b/iu.test(message)
@@ -230,7 +237,7 @@ export const isPackageSummaryRequest = (message: string): boolean =>
   && !/\b(?:quote|quotation)\b/iu.test(message)
   && (/\b(?:price|prices|pricing|cost|costs|fee|fees|visa|visas|office|includ\w*|availab\w*|process(?:ing)?|compare|comparison|versus|vs\.?)\b/iu.test(message)
     || (/\b(?:package|packages|plan|plans|tier|tiers)\b/iu.test(message)
-      && /\b(?:what|which|offer\w*|availab\w*|option\w*|choice\w*|compare|comparison|versus|vs\.?)\b/iu.test(message)));
+      && /\b(?:show|what|which|offer\w*|availab\w*|option\w*|choice\w*|compare|comparison|versus|vs\.?|information|details|only)\b/iu.test(message)));
 
 export const resolveDocumentRequirement = (
   catalog: CatalogV2Document | null,
@@ -256,7 +263,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   if (!session.personaVersionId) throw new HttpError(409, 'V2_PERSONA_NOT_PINNED', 'A published persona must be pinned to this session.');
   const persona = await store.getPersonaVersion(tenant.id, session.personaVersionId);
   if (!persona || persona.status !== 'published') throw new HttpError(409, 'V2_PERSONA_UNAVAILABLE', 'The pinned persona is not available.');
-  if (userMessage.response || (await store.listIntentTurns(tenant.id, session.id))
+  if ((userMessage.response && userMessage.response.retryable !== true) || (await store.listIntentTurns(tenant.id, session.id))
     .some(turn => turn.clientMessageId === input.clientMessageId)) {
     throw new HttpError(409, 'V2_TURN_REPLAY', 'This customer message has already been assessed.');
   }
@@ -321,8 +328,9 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     throw new HttpError(409, 'V2_CATALOG_INVALID', 'The published V2 catalog cannot be validated.');
   }
   const catalogV2 = validatedV2?.catalog ?? null;
+  const factualKnowledge = isV2FactualKnowledgeQuestion(maskedMessage);
   const commercialDocumentRequest = Boolean(catalogV2 && !crmLead && !intentDocument?.goalConfirmed
-    && isCommercialDocumentRequest(maskedMessage));
+    && !factualKnowledge && isCommercialDocumentRequest(maskedMessage));
   const enabledActionToolKeys = catalogV2
     ? catalogV2.sheets.ToolBindings.filter(tool => tool.enabled && tool.sideEffectClass !== 'read_only')
       .map(tool => tool.toolKey).slice(0, 32)
@@ -459,6 +467,13 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
       packageOptions = [];
     }
   }
+  if (packageOptions === null && v2Version && packageIntent) {
+    try {
+      packageOptions = await listApprovedV2PackageOptions(store, tenant.id, v2Version.catalogVersionRef);
+    } catch {
+      packageOptions = [];
+    }
+  }
   if (approvedKnowledge.length === 0 && input.embedding) {
     try {
       approvedKnowledge = await prefetchV2ApprovedKnowledge(store, input.embedding, tenant.id, preflightQuery);
@@ -559,11 +574,15 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     && !planningDecision.score?.ambiguous
     && intentEvidence?.initiation === 'explicit'
     && intentEvidence.ambiguous === false);
+  const observedGoalCandidate = catalogV2 && intentEvidence?.initiation === 'explicit'
+    && intentEvidence.ambiguous === false && intentEvidence.candidateGoalKeys.length === 1
+    ? intentEvidence.candidateGoalKeys[0] : null;
   const selectedV2Goal = existingConfirmedGoal ?? (validPlan && (planningDecision?.score?.thresholdMet || semanticGoalCandidate)
     && !planningDecision?.score?.ambiguous ? planningDecision?.primaryGoalKey ?? null
     : intentDocument?.catalogSource === 'v2' ? intentDocument.businessGoalKey
+      ?? observedGoalCandidate
       ?? (commercialDocumentRequest || quoteContinuationRequest ? catalogV2?.sheets.BusinessGoals.find(goal => goal.active && goal.confirmationRequired)?.businessGoalKey ?? null : null)
-      : commercialDocumentRequest || quoteContinuationRequest ? catalogV2?.sheets.BusinessGoals.find(goal => goal.active && goal.confirmationRequired)?.businessGoalKey ?? null : null);
+      : observedGoalCandidate ?? (commercialDocumentRequest || quoteContinuationRequest ? catalogV2?.sheets.BusinessGoals.find(goal => goal.active && goal.confirmationRequired)?.businessGoalKey ?? null : null));
   const selectedTurnCategory = validPlan ? planningDecision?.proposal?.turnCategory ?? null : null;
   // The model may propose a goal, but only Node may interpret a customer
   // decision against the already persisted prompt and its optimistic cursor.
@@ -652,9 +671,11 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     && ['failed', 'reconcile_required'].includes(action.state));
   const leadProposalAfterConsent = Boolean(contactActive && contactConsent === 'granted'
     && actionConfirmationRequirementKey && (contactDecision === 'granted' || priorPendingRequirement === actionConfirmationRequirementKey)
+    && explicitLeadRequest
     && !existingLeadAction && !terminalLeadAction);
-  const quotationProposalRequested = Boolean(explicitQuotationRequest(maskedMessage)
-    || (explicitQuotationConsent(maskedMessage) && (intentDocument?.verifiedFacts?.document_processing_consent || explicitDocumentProcessingConsent(maskedMessage))));
+  const docRefused = explicitDocumentProcessingRefusal(maskedMessage);
+  const quotationProposalRequested = !docRefused && Boolean(explicitQuotationRequest(maskedMessage)
+    || (explicitQuotationConsent(maskedMessage) && (intentDocument?.verifiedFacts?.document_processing_consent?.maskedValue === 'true' || explicitDocumentProcessingConsent(maskedMessage))));
   const proposedActionToolKey = explicitLeadRequest || leadProposalAfterConsent
     ? 'lead.create'
     : quotationProposalRequested
@@ -672,7 +693,8 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     : null;
   const quotationConsentScope = quotationAction && v2Version ? v2ActionConsentScope({ catalogVersionId: v2Version.catalogVersionRef }, proposedActionToolKey) : null;
   const quotationConsentSatisfied = quotationAction
-    ? Boolean(quotationConsentScope && (originalState.consentVersion === quotationConsentScope || explicitQuotationConsent(maskedMessage)))
+    ? Boolean(quotationConsentScope && (originalState.consentVersion === quotationConsentScope
+      || explicitQuotationConsent(maskedMessage) || explicitQuotationRequest(maskedMessage)))
     : contactConsent === 'granted';
   const leadCreateBinding = catalogV2?.sheets.ToolBindings.find(binding => binding.toolKey === 'lead.create') ?? null;
   const leadActionRequested = explicitLeadRequest;
@@ -714,19 +736,30 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   const at = new Date().toISOString();
   const requirementGoal = catalogV2?.sheets.BusinessGoals.find(goal => goal.active
     && goal.businessGoalKey === selectedV2Goal) ?? null;
+  const affirmativeGoalInitiation = Boolean(catalogV2 && requirementGoal
+    && !intentDocument?.goalConfirmed && !pendingDecision && !decision
+    && intentEvidence?.initiation === 'explicit'
+    && /^(?:yes|confirmed|that sounds good|sounds good|great|perfect|sure|okay|ok)\b[\s,!.—–-]*(?:(?:please\s+)?(?:proceed|go ahead|start|begin|set up|get started)|let(?:'|’)s\s+(?:proceed|go ahead|start|begin)|let us\s+(?:proceed|go ahead|start|begin))/iu.test(maskedMessage));
   const greetingTurn = /^(?:hello|hi|hey|good\s+(?:morning|afternoon|evening))\b/iu.test(maskedMessage);
   const documentQuestion = /\b(?:document|documents|passport|identity|upload|provide|next)\b/iu.test(maskedMessage);
   // Advisory/knowledge-only turns cannot activate a business journey. A new
   // prompt must be tied to observed, validated business-goal planning.
+  const observedGoalPromptEligible = Boolean(intentEvidence?.initiation === 'explicit'
+    && intentEvidence.ambiguous === false
+    && intentEvidence.candidateGoalKeys.length === 1
+    && intentEvidence.candidateGoalKeys[0] === selectedV2Goal);
   const shouldPrompt = Boolean(catalogV2 && requirementGoal?.confirmationRequired
-    && !intentDocument?.goalConfirmed && !pendingDecision && !decision && !greetingTurn
-    && (commercialDocumentRequest || (quoteContinuationRequest && /\bquotation\b/iu.test(result.response.nextQuestion ?? '')) || (validPlan
-      && (planningDecision?.score?.thresholdMet || semanticGoalCandidate) && !planningDecision?.score?.ambiguous
-      && intentEvidence?.initiation === 'explicit'
-      && intentEvidence.ambiguous === false
-      && (semanticGoalCandidate || (intentEvidence.initiationSupported === true
-        && intentEvidence.candidateGoalKeys.length === 1
-        && intentEvidence.candidateGoalKeys[0] === selectedV2Goal)))));
+    && !intentDocument?.goalConfirmed && !pendingDecision && !decision && !affirmativeGoalInitiation && !greetingTurn
+    && (commercialDocumentRequest
+      || (quoteContinuationRequest && /\bquotation\b/iu.test(result.response.nextQuestion ?? ''))
+      || observedGoalPromptEligible
+      || (validPlan && (planningDecision?.score?.thresholdMet || semanticGoalCandidate)
+        && !planningDecision?.score?.ambiguous
+        && intentEvidence?.initiation === 'explicit'
+        && intentEvidence.ambiguous === false
+        && (semanticGoalCandidate || (intentEvidence.initiationSupported === true
+          && intentEvidence.candidateGoalKeys.length === 1
+          && intentEvidence.candidateGoalKeys[0] === selectedV2Goal)))));
   let goalConfirmation: GoalConfirmationRecord | null = previousDecision;
   let goalConfirmed = Boolean(intentDocument?.goalConfirmed);
   let nextGoalKey = intentDocument?.goalConfirmed ? intentDocument.businessGoalKey : selectedV2Goal;
@@ -756,6 +789,14 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     effectiveAnswer = `I can collect contact details once you confirm ${goalName.toLowerCase()}. I have not used them for any action. Would you like to proceed with ${goalName.toLowerCase()}?`;
     effectiveQuestion = `Would you like to proceed with ${goalName.toLowerCase()}?`;
     overrideResponse = true;
+    if (!pendingDecision && selectedV2Goal && v2Version) {
+      goalConfirmation = {
+        status: 'pending', promptId: responseId, proposalMessageId: userMessage.id,
+        goalKey: selectedV2Goal, catalogVersionRef: v2Version.catalogVersionRef,
+        personaVersionId: persona.id, sessionRevision: sessionRevision + 1,
+        intentRevision: (intentDocument?.revision ?? -1) + 1, issuedAt: at,
+      };
+    }
   }
   if (leadSubmissionUnavailable) {
     if (leadProviderUnavailable && (leadActionConfirmed || leadActionRequested)) {
@@ -805,6 +846,19 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
         overrideResponse = true;
       }
     }
+  } else if (affirmativeGoalInitiation && requirementGoal && selectedV2Goal) {
+    goalConfirmed = true;
+    nextGoalKey = selectedV2Goal;
+    goalConfirmation = { status: 'confirmed', promptId: responseId, proposalMessageId: userMessage.id,
+      goalKey: selectedV2Goal, catalogVersionRef: v2Version!.catalogVersionRef,
+      personaVersionId: persona.id, sessionRevision, intentRevision: intentDocument?.revision ?? 0,
+      customerMessageId: userMessage.id, customerClientMessageId: input.clientMessageId,
+      decidedAt: at, decisionSessionRevision: sessionRevision,
+      decisionIntentRevision: intentDocument?.revision ?? 0, issuedAt: at };
+    effectivePendingRequirement = nameRequirementKey ?? 'lead_contact_name';
+    effectiveAnswer = `Understood. We’ll focus on ${requirementGoal.name.toLowerCase()}. I’ll first register your enquiry, then guide you through the approved packages and quote. What full name should I use for the Lead?`;
+    effectiveQuestion = 'What full name should I use for the Lead?';
+    overrideResponse = true;
   } else if (shouldPrompt && requirementGoal && selectedV2Goal) {
     goalConfirmed = false;
     nextGoalKey = selectedV2Goal;
@@ -813,7 +867,9 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
       personaVersionId: persona.id, sessionRevision: sessionRevision + 1,
       intentRevision: (intentDocument?.revision ?? -1) + 1, issuedAt: at };
     effectiveQuestion = 'Would you like to proceed with ' + requirementGoal.name.toLowerCase() + '?';
-    const requestedDocument = documentQuestion
+    const requestedDocument = documentQuestion && !factualKnowledge
+      && intentDocument?.goalConfirmed
+      && intentDocument?.currentStageKey === 'document_upload'
       ? catalogV2!.sheets.DocumentPolicies.find(policy => policy.goalKey === selectedV2Goal && policy.required && policy.enabled)
       : null;
     const preserveQuoteContinuation = quoteContinuationRequest && /\bquotation\b/iu.test(result.response.nextQuestion ?? '');
@@ -821,6 +877,13 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
       effectiveQuestion = result.response.nextQuestion ?? effectiveQuestion;
       effectiveAnswer = result.response.answer;
       overrideResponse = false;
+    } else if (docRefused) {
+      const alreadySaidRefusal = priorMessages.some(m => m.role === 'assistant' && m.maskedContent.includes('declined document processing'));
+      effectiveAnswer = alreadySaidRefusal
+        ? 'As noted earlier, we cannot generate an official quotation without identity document verification. Please let me know if you would like to explore other options or provide the document.'
+        : 'Under our business setup policies, identity document processing is required before we can generate an official quotation. Because you have declined document processing, I cannot prepare or generate the quotation.';
+      effectiveQuestion = 'Would you like to explore other options or revisit this enquiry?';
+      overrideResponse = true;
     } else effectiveAnswer = requestedDocument
       ? `For ${requirementGoal.name}, the current journey includes a required identity document step. I can collect it after you confirm the enquiry. ${effectiveQuestion}`
       : `I can help with ${requirementGoal.name.toLowerCase()}. Before we collect documents, I’ll register your enquiry, gather the necessary details, then show you the approved package options and prepare the quote. ${effectiveQuestion}`;
@@ -936,7 +999,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
       evidenceRefs: ['customer-message:' + userMessage.id], corrected: false,
     } } : {}),
   } : {};
-  const actionConfirmationFactPatch = (actionProposalRequested || leadActionConfirmed) && proposedActionConfirmationRequirementKey ? {
+  const actionConfirmationFactPatch = leadActionConfirmed && proposedActionConfirmationRequirementKey ? {
     [proposedActionConfirmationRequirementKey]: {
       maskedValue: 'true', source: 'visitor' as const, messageSequence: state.messageSequence,
       evidenceRefs: ['customer-message:' + userMessage.id], corrected: false,
@@ -945,10 +1008,10 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   const documentProcessingConsentRequirementKey = catalogV2
     ? catalogV2.sheets.RequirementPolicies.find(requirement => requirement.goalKey === selectedV2Goal && requirement.requirementKey === 'document_processing_consent')?.requirementKey ?? null
     : null;
-  const documentProcessingConsentFactPatch = explicitDocumentProcessingConsent(maskedMessage) && documentProcessingConsentRequirementKey ? {
+  const documentProcessingConsentFactPatch = documentProcessingConsentRequirementKey && (explicitDocumentProcessingConsent(maskedMessage) || docRefused) ? {
     [documentProcessingConsentRequirementKey]: {
-      maskedValue: 'true', source: 'visitor' as const, messageSequence: state.messageSequence,
-      evidenceRefs: ['customer-message:' + userMessage.id], corrected: false,
+      maskedValue: docRefused ? 'false' : 'true', source: 'visitor' as const, messageSequence: state.messageSequence,
+      evidenceRefs: ['customer-message:' + userMessage.id], corrected: Boolean(intentDocument?.verifiedFacts[documentProcessingConsentRequirementKey]),
     },
   } : {};
   const accountProviderReferenceRequirementKey = catalogV2
@@ -960,7 +1023,8 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
       evidenceRefs: ['provider-account-reference'], corrected: false,
     },
   } : {};
-  const quotationConsentFactPatch = actionProposalRequested && quotationAction && explicitQuotationConsent(maskedMessage) && quotationConsentRequirementKey ? {
+  const quotationConsentFactPatch = actionProposalRequested && quotationAction
+    && (explicitQuotationConsent(maskedMessage) || explicitQuotationRequest(maskedMessage)) && quotationConsentRequirementKey ? {
     [quotationConsentRequirementKey]: {
       maskedValue: 'true', source: 'visitor' as const, messageSequence: state.messageSequence,
       evidenceRefs: ['customer-message:' + userMessage.id], corrected: false,
@@ -976,9 +1040,13 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
   let approvedResponse = { answer: answerMasked, grounded, citationRefs: effectiveCitationIds,
     pendingRequirementKey: effectivePendingRequirement };
   const verifiedFactPatch: Record<string, UserIntentFact> = Object.fromEntries(
-    Object.entries(incomingFacts).filter(([key, value]) =>
-      !intentDocument?.verifiedFacts[key] || intentDocument.verifiedFacts[key]?.maskedValue !== value.maskedValue)
-      .map(([key, value]) => [key, { ...value, corrected: Boolean(intentDocument?.verifiedFacts[key]) }]),
+    Object.entries(incomingFacts).filter(([key, value]) => {
+      if (!intentDocument?.goalConfirmed && !goalConfirmed) {
+        const commercialKeys = ['package_choice', 'quotation_consent', 'quotation_confirmation', 'document_processing_consent', 'document_attachment_confirmation'];
+        if (commercialKeys.includes(key)) return false;
+      }
+      return !intentDocument?.verifiedFacts[key] || intentDocument.verifiedFacts[key]?.maskedValue !== value.maskedValue;
+    }).map(([key, value]) => [key, { ...value, corrected: Boolean(intentDocument?.verifiedFacts[key]) }]),
   );
   let nextDoc: UserIntentDocument = intentDocument ? {
     ...intentDocument, approvedResponse, lastQuestion: effectiveQuestion,
@@ -1082,7 +1150,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
       const argumentsForBinding = Object.fromEntries(proposedActionBinding.requiredKeys.map(key => {
         const policy = v2Version.catalog.sheets.RequirementPolicies.find(requirement => requirement.goalKey === proposedActionBinding.goalKey && requirement.stageKey === proposedActionBinding.stageKey && requirement.requirementKey === key);
         return [key, policy?.type === 'fact' ? factValue(key) : true];
-      }));
+      }).filter(([key]) => !v2Version.catalog.sheets.RequirementPolicies.some(requirement => requirement.goalKey === proposedActionBinding.goalKey && requirement.stageKey === proposedActionBinding.stageKey && requirement.requirementKey === key && requirement.type === 'confirmation')));
       actionDecision = await proposeV2CatalogAction({
         schemaVersion: 2, toolKey: proposedActionToolKey, goalKey: nextDoc.businessGoalKey,
         stageKey: proposedActionBinding.stageKey, actionRevision,
@@ -1095,6 +1163,16 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
       ? 'Thanks — I’ve confirmed the Lead submission and sent it for processing. I’ll report the result after Salesforce is independently verified.'
       : 'I couldn’t find a pending Lead submission to confirm. I have not submitted anything.';
     effectiveQuestion = null;
+    overrideResponse = true;
+    answerMasked = maskPiiForSession(session, effectiveAnswer, input.tokenVault);
+    assertKnownTokens(session, answerMasked, input.tokenVault);
+    approvedResponse = { answer: answerMasked, grounded: false, citationRefs: [], pendingRequirementKey: effectivePendingRequirement };
+    nextDoc.approvedResponse = approvedResponse;
+    nextDoc.lastQuestion = effectiveQuestion;
+  }
+  if (!leadActionConfirmed && actionDecision?.accepted && proposedActionToolKey === 'lead.create') {
+    effectiveAnswer = 'I have your contact consent. Your Lead submission is ready to confirm. Would you like me to submit it?';
+    effectiveQuestion = 'Would you like me to submit the Lead?';
     overrideResponse = true;
     answerMasked = maskPiiForSession(session, effectiveAnswer, input.tokenVault);
     assertKnownTokens(session, answerMasked, input.tokenVault);
@@ -1124,7 +1202,22 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     nextDoc.approvedResponse = approvedResponse;
     nextDoc.lastQuestion = effectiveQuestion;
   }
-  if (incomingFacts.package_choice && !incomingFacts.document_processing_consent && !overrideResponse && !leadSubmissionUnavailable && !leadActionConfirmed && !pendingDecision) {
+  if (docRefused && (!overrideResponse || effectiveAnswer.includes('Before we collect documents')) && !leadSubmissionUnavailable && !leadActionConfirmed) {
+    const alreadySaidRefusal = priorMessages.some(m => m.role === 'assistant' && m.maskedContent.includes('declined document processing'));
+    effectiveAnswer = alreadySaidRefusal
+      ? 'As noted earlier, we cannot generate an official quotation without identity document verification. Please let me know if you would like to explore other options or provide the document.'
+      : 'Under our business setup policies, identity document processing is required before we can generate an official quotation. Because you have declined document processing, I cannot prepare or generate the quotation.';
+    effectiveQuestion = 'Would you like to explore other options or revisit this enquiry?';
+    overrideResponse = true;
+    effectivePendingRequirement = null;
+    answerMasked = maskPiiForSession(session, effectiveAnswer, input.tokenVault);
+    assertKnownTokens(session, answerMasked, input.tokenVault);
+    approvedResponse = { answer: answerMasked, grounded: false, citationRefs: [], pendingRequirementKey: null };
+    nextDoc.approvedResponse = approvedResponse;
+    nextDoc.lastQuestion = effectiveQuestion;
+    nextDoc.pendingRequirementKey = null;
+  }
+  if (incomingFacts.package_choice && (!incomingFacts.document_processing_consent || incomingFacts.document_processing_consent.maskedValue !== 'true') && !docRefused && !overrideResponse && !leadSubmissionUnavailable && !leadActionConfirmed && !pendingDecision) {
     const chosenPkg = incomingFacts.package_choice.maskedValue;
     effectiveAnswer = `Great choice with the ${chosenPkg} package. Before we can prepare the official quotation, we will need your passport copy for identity verification. Do you consent to document processing?`;
     effectiveQuestion = 'Do you consent to document processing?';
@@ -1135,7 +1228,8 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     approvedResponse = { answer: answerMasked, grounded: false, citationRefs: [], pendingRequirementKey: effectivePendingRequirement };
     nextDoc.approvedResponse = approvedResponse;
     nextDoc.lastQuestion = effectiveQuestion;
-  } else if (documentProcessingConsentFactPatch.document_processing_consent && !overrideResponse && !leadSubmissionUnavailable && !leadActionConfirmed && !pendingDecision) {
+    nextDoc.pendingRequirementKey = effectivePendingRequirement;
+  } else if (documentProcessingConsentFactPatch.document_processing_consent?.maskedValue === 'true' && !docRefused && !overrideResponse && !leadSubmissionUnavailable && !leadActionConfirmed && !pendingDecision) {
     const chosenPkg = incomingFacts.package_choice?.maskedValue ?? 'selected';
     effectiveAnswer = `Thank you for providing document processing consent. Would you like me to prepare the official quotation for the ${chosenPkg} package?`;
     effectiveQuestion = `Would you like me to prepare the official quotation for the ${chosenPkg} package?`;
@@ -1146,6 +1240,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     approvedResponse = { answer: answerMasked, grounded: false, citationRefs: [], pendingRequirementKey: effectivePendingRequirement };
     nextDoc.approvedResponse = approvedResponse;
     nextDoc.lastQuestion = effectiveQuestion;
+    nextDoc.pendingRequirementKey = effectivePendingRequirement;
   }
   if (!quotationActionConfirmed && actionDecision?.accepted && proposedActionToolKey === 'quotation.generate') {
     effectiveAnswer = 'Your quotation request is ready to confirm. Would you like me to generate the official quotation now?';
@@ -1156,6 +1251,7 @@ export const runGPTFirstChatTurn = async (input: GPTFirstTurnInput) => {
     approvedResponse = { answer: answerMasked, grounded: false, citationRefs: [], pendingRequirementKey: effectivePendingRequirement };
     nextDoc.approvedResponse = approvedResponse;
     nextDoc.lastQuestion = effectiveQuestion;
+    nextDoc.pendingRequirementKey = effectivePendingRequirement;
   }
   const preserveGreetingFollowUp = greetingTurn && !pendingDecision && !intentDocument?.goalConfirmed && result.guardReason === 'accepted';
   const packageOfferOptions = packageFollowUpOptions(packageOptions ?? []);

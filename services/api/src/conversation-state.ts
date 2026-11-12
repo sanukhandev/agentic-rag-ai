@@ -190,12 +190,13 @@ export const classifyScopedGoalDecision = (message: string): ScopedGoalDecision 
   if (/\b(?:understand|explain|process|eligib(?:ility|le)|requirement|visa|timeline|budget|activity|document|package|price|pricing|cost|fee|advisor|adviser|contact|consent|privacy|sensitive|information|disclose|share|name|email|phone)\b/iu.test(text)
     && !/\b(?:proceed|confirm|go ahead)\b/iu.test(text)) return 'interruption';
   if (/^(?:actually\b|instead\b|i (?:want|would like|need) to (?:explore|change|switch|consider)\b|i(?:'d| would) rather\b)/u.test(text)) return 'corrected';
+  const core = text.replace(/^(?:that sounds good|sounds good|great|perfect|sure|okay|ok)\s*[-—–,.]*\s*/iu, '');
   if (/\b(?:confirm|confirmed)\b[\s\S]{0,120}\b(?:goal|company formation|proceed|start|begin)\b/iu.test(text)
-    || /^(?:yes|please)\b[\s\S]{0,120}\b(?:proceed|go ahead|start|get started|begin)\b/iu.test(text)
-    || /^i\s+(?:confirm|agree|accept)\b[\s\S]{0,120}\b(?:goal|company formation|proceed|start|begin)\b/iu.test(text)
-    || /^let(?:'|’)s\s+(?:proceed|go ahead|start|get started|begin)\b|^let us\s+(?:proceed|go ahead|start|get started|begin)\b/iu.test(text)
-    || /^i\s+(?:want|would like|need)\s+to\s+(?:start|begin|form|set up|establish|register)\s+(?:a|my|the)\s+(?:company|business)\b/iu.test(text)
-    || /^(?:please\s+)?(?:proceed|go ahead)\s+with\s+(?:the\s+)?(?:company|business|formation|setup|registration|application|process|request|service)\b/iu.test(text)) return 'confirmed';
-  if (/^(?:(?:yes|ys)(?:[, ]+(?:please|proceed|go ahead|let(?:'|’)s proceed|let us proceed|i (?:want|would like) to proceed))?|please proceed|(?:let(?:'|’)s|let us) proceed|proceed|go ahead|i (?:want|would like) to proceed|i confirm|confirm)[.! ]*$/u.test(text)) return 'confirmed';
+    || /^(?:yes|please)\b[\s\S]{0,120}\b(?:proceed|go ahead|start|get started|begin)\b/iu.test(core)
+    || /^i\s+(?:confirm|agree|accept)\b[\s\S]{0,120}\b(?:goal|company formation|proceed|start|begin)\b/iu.test(core)
+    || /^let(?:'|’)s\s+(?:proceed|go ahead|start|get started|begin)\b|^let us\s+(?:proceed|go ahead|start|get started|begin)\b/iu.test(core)
+    || /^i\s+(?:want|would like|need)\s+to\s+(?:start|begin|form|set up|establish|register)\s+(?:a|my|the)\s+(?:company|business)\b/iu.test(core)
+    || /^(?:please\s+)?(?:proceed|go ahead)\s+with\s+(?:the\s+)?(?:company|business|formation|setup|registration|application|process|request|service)\b/iu.test(core)) return 'confirmed';
+  if (/^(?:(?:yes|ys)(?:[, ]+(?:please|proceed|go ahead|let(?:'|’)s proceed|let us proceed|i (?:want|would like) to proceed))?|please proceed|(?:let(?:'|’)s|let us) proceed|proceed|go ahead|i (?:want|would like) to proceed|i confirm|confirm)[.! ]*$/u.test(core)) return 'confirmed';
   return 'ambiguous';
 };

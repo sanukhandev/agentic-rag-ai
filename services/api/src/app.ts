@@ -12,6 +12,7 @@ import { DeterministicGroundedModel, extractLeadData, isSafeContinuityAnswer, ty
 import { assertKnownTokens, maskPii, maskPiiForSession, rehydrateForSession, redactUnknownTokens, sanitizeKnowledgeText, sanitizeSensitiveText, TokenVault } from './privacy.js';
 import { isCrmWriteBinding, validateIntentCatalog } from './intent-catalog.js';
 import { catalogV2Sha256, catalogV2VersionRef, validateCatalogV2 } from './conversation/catalog.js';
+import { resolveV2DocumentRoute } from './conversation/workflow-bridge.js';
 import { auditLegacyCatalogVersion, createLegacyCatalogV2Candidate } from './conversation/catalog-migration.js';
 import { validatePublishedCatalogV2 } from './conversation/catalog-runtime.js';
 import { completeLifecycleStage, newLifecycleState } from './lifecycle-state.js';
@@ -883,12 +884,13 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   const documentConfig = async (tenantId: string) => {
     const v2Version = (await store.listIntentCatalogV2Versions(tenantId)).find((candidate) => candidate.status === 'published');
     if (v2Version) {
+      const docRoute = resolveV2DocumentRoute(v2Version);
       const policies = v2Version.catalog.sheets.DocumentPolicies;
-      const binding = v2Version.catalog.sheets.WorkflowBindings.find((candidate) => candidate.workflowKey === 'anc.document.ocr.extract' && candidate.enabled);
+      const binding = docRoute?.enabled ? v2Version.catalog.sheets.WorkflowBindings.find((candidate) => candidate.workflowKey === docRoute.workflowKey) : null;
       const enabledTools = new Set(v2Version.catalog.sheets.ToolBindings.filter((candidate) => ['document.ocr.extract', 'document.sf02_upload'].includes(candidate.toolKey) && candidate.enabled).map((candidate) => candidate.goalKey));
-      const allowedMimeTypes = [...new Set(policies.flatMap((policy) => policy.mimeTypes))];
-      const requirements = policies.filter((policy) => policy.required && policy.enabled && enabledTools.has(policy.goalKey)).map((policy) => ({ intentKey: policy.goalKey, requirementKey: policy.policyKey, documentType: policy.docType, allowedDocumentTypes: [policy.docType] }));
-      return { enabled: Boolean(binding && enabledTools.size), requireUploadConsent: true, maxFileBytes: MAX_DOCUMENT_BYTES, maxFilesPerRequest: 1, maxPdfPages: 20, allowedMimeTypes, policies: policies.filter((policy) => policy.enabled && enabledTools.has(policy.goalKey)).map((policy) => ({ intentKey: policy.goalKey, requestMode: 'explicit_upload' as const, allowedDocumentTypes: [policy.docType], consentRequired: true })), requirements, workflowKey: binding?.workflowKey ?? null, binding: binding ? { webhookPath: binding.webhookPath ?? '', payloadContract: binding.payloadContract ?? null } : null };
+      const allowedMimeTypes = docRoute?.mimeTypes ?? [...new Set(policies.flatMap((policy) => policy.mimeTypes))];
+      const requirements = policies.filter((policy) => policy.required && policy.enabled && (enabledTools.has(policy.goalKey) || docRoute?.enabled)).map((policy) => ({ intentKey: policy.goalKey, requirementKey: policy.policyKey, documentType: policy.docType, allowedDocumentTypes: [policy.docType] }));
+      return { enabled: Boolean(binding && (enabledTools.size || docRoute?.enabled)), requireUploadConsent: true, maxFileBytes: MAX_DOCUMENT_BYTES, maxFilesPerRequest: 1, maxPdfPages: 20, allowedMimeTypes, policies: policies.filter((policy) => policy.enabled && (enabledTools.has(policy.goalKey) || docRoute?.enabled)).map((policy) => ({ intentKey: policy.goalKey, requestMode: 'explicit_upload' as const, allowedDocumentTypes: [policy.docType], consentRequired: true })), requirements, workflowKey: docRoute?.workflowKey ?? binding?.workflowKey ?? null, binding: binding ? { webhookPath: binding.webhookPath ?? '', payloadContract: binding.payloadContract ?? null } : null };
     }
     const version = await store.getPublishedIntentCatalog(tenantId);
     const settings = version?.catalog.documentSettings;
@@ -2574,29 +2576,51 @@ export const createApp = (dependencies: AppDependencies = {}) => {
       const input = parse(documentUploadSchema, req.body);
       const existingLead = await store.getCrmLeadBySessionId(session.id, session.tenantId);
       const conversationState = session.conversationState ?? newConversationState();
-      const activeIntentKeys = new Set([conversationState.selectedIntentKey, conversationState.activeFollowUpIntentKey, ...conversationState.candidateIntentKeys].filter((value): value is string => Boolean(value)));
-      const requestedIntentKey = input.primaryIntentKey ?? conversationState.activeFollowUpIntentKey ?? conversationState.selectedIntentKey ?? existingLead?.intent ?? null;
-      if (!requestedIntentKey || (!activeIntentKeys.has(requestedIntentKey) && existingLead?.intent !== requestedIntentKey)) throw new HttpError(409, 'DOCUMENT_INTENT_NOT_ACTIVE', 'The document must belong to the active conversation request.');
-      const v2Version = conversationState.catalogVersionId
-        ? (await store.listIntentCatalogV2Versions(session.tenantId)).find((candidate) => candidate.status === 'published' && (candidate.id === conversationState.catalogVersionId || candidate.catalogVersionRef === conversationState.catalogVersionId))
+      const userIntentDoc = await store.getUserIntentDocument(session.tenantId, session.id);
+      const v2VersionRef = userIntentDoc?.catalogVersionRef ?? conversationState.catalogVersionId;
+      const v2Version = v2VersionRef
+        ? (await store.listIntentCatalogV2Versions(session.tenantId)).find((candidate) => candidate.status === 'published' && (candidate.id === v2VersionRef || candidate.catalogVersionRef === v2VersionRef))
         : null;
+      const isV2 = Boolean(v2Version || userIntentDoc?.catalogSource === 'v2');
+      // V2 collects the identity document after package choice and before
+      // quotation generation; the legacy endpoint below remains quote-first.
+      const preQuoteV2DocumentUpload = Boolean(v2Version && userIntentDoc?.currentStageKey === 'package_selection'
+        && userIntentDoc.verifiedFacts.package_choice?.maskedValue
+        && userIntentDoc.verifiedFacts.document_processing_consent?.maskedValue === 'true'
+        && input.processingConsent === true);
+      const activeIntentKeys = new Set([
+        conversationState.selectedIntentKey,
+        conversationState.activeFollowUpIntentKey,
+        ...conversationState.candidateIntentKeys,
+        ...(userIntentDoc?.goalConfirmed && userIntentDoc.businessGoalKey ? [userIntentDoc.businessGoalKey] : []),
+      ].filter((value): value is string => Boolean(value)));
+      const requestedIntentKey = input.primaryIntentKey
+        ?? (userIntentDoc?.goalConfirmed ? userIntentDoc.businessGoalKey : null)
+        ?? conversationState.activeFollowUpIntentKey
+        ?? conversationState.selectedIntentKey
+        ?? existingLead?.intent
+        ?? null;
+      if (!requestedIntentKey || (!activeIntentKeys.has(requestedIntentKey) && existingLead?.intent !== requestedIntentKey)) throw new HttpError(409, 'DOCUMENT_INTENT_NOT_ACTIVE', 'The document must belong to the active conversation request.');
       const version = v2Version ? null : conversationState.catalogVersionId
         ? await store.getIntentCatalogVersion(session.tenantId, conversationState.catalogVersionId)
         : await store.getPublishedIntentCatalog(session.tenantId);
       if (conversationState.catalogVersionId && !version && !v2Version) throw new HttpError(409, 'CATALOG_VERSION_UNAVAILABLE', 'This conversation uses an unavailable catalog version. Please start a new request.');
-      const v2PolicyRow = v2Version?.catalog.sheets.DocumentPolicies.find((item) => item.goalKey === requestedIntentKey);
-      const v2ProcessingBinding = v2Version?.catalog.sheets.WorkflowBindings.find((candidate) => candidate.workflowKey === 'anc.document.ocr.extract' && candidate.enabled);
+      const v2DocRoute = v2Version ? resolveV2DocumentRoute(v2Version, requestedIntentKey) : null;
+      const v2PolicyRow = v2Version?.catalog.sheets.DocumentPolicies.find((item) => item.goalKey === requestedIntentKey && item.stageKey === 'document_upload');
+      const v2ProcessingBinding = v2DocRoute?.enabled
+        ? v2Version?.catalog.sheets.WorkflowBindings.find((candidate) => candidate.workflowKey === v2DocRoute.workflowKey)
+        : null;
       const settings = v2Version
-        ? { enabled: Boolean(v2ProcessingBinding), requireUploadConsent: true, maxFileBytes: MAX_DOCUMENT_BYTES, allowedMimeTypes: v2PolicyRow?.mimeTypes ?? DEFAULT_DOCUMENT_MIME_TYPES, workflowKey: v2ProcessingBinding?.workflowKey ?? null }
+        ? { enabled: Boolean(v2ProcessingBinding && v2DocRoute?.enabled), requireUploadConsent: true, maxFileBytes: MAX_DOCUMENT_BYTES, allowedMimeTypes: v2DocRoute?.mimeTypes ?? v2PolicyRow?.mimeTypes ?? DEFAULT_DOCUMENT_MIME_TYPES, workflowKey: v2ProcessingBinding?.workflowKey ?? v2DocRoute?.workflowKey ?? null }
         : version?.catalog.documentSettings;
       const binding = v2Version
-        ? v2ProcessingBinding
+        ? (v2DocRoute?.enabled ? v2ProcessingBinding : undefined)
         : settings ? version?.catalog.workflowBindings.find((candidate) => candidate.workflowKey === settings.workflowKey && candidate.active) : undefined;
       const policy = v2Version
         ? (() => {
           const candidate = v2PolicyRow;
-          const tool = v2Version.catalog.sheets.ToolBindings.find((item) => ['document.ocr.extract', 'document.sf02_upload'].includes(item.toolKey) && item.goalKey === requestedIntentKey && item.enabled);
-          return candidate && tool ? { enabled: candidate.enabled && tool.enabled, allowUserInitiated: true, consentRequired: tool.consent === 'purpose_specific', storeExtractedText: false, allowedDocumentTypes: [candidate.docType] } : undefined;
+          const tool = v2Version.catalog.sheets.ToolBindings.find((item) => ['document.ocr.extract', 'document.sf02_upload'].includes(item.toolKey) && item.goalKey === requestedIntentKey);
+          return candidate && tool ? { enabled: Boolean(v2DocRoute?.enabled && candidate.enabled), allowUserInitiated: true, consentRequired: tool.consent === 'purpose_specific', storeExtractedText: false, allowedDocumentTypes: [candidate.docType] } : undefined;
         })()
         : version?.catalog.documentPolicies?.find((candidate) => candidate.intentKey === requestedIntentKey) ?? version?.catalog.documentPolicies?.find((candidate) => candidate.intentKey === 'anc.document.supporting_upload');
       const journeyRequirement = v2Version
@@ -2604,15 +2628,28 @@ export const createApp = (dependencies: AppDependencies = {}) => {
         : version?.catalog.journeyRequirements?.find((candidate) => candidate.intentKey === requestedIntentKey && candidate.requirementKey === input.requirementKey && candidate.requirementType === 'document') ?? null;
       const catalogVersionKey = v2Version?.catalogVersionRef ?? version?.id ?? null;
       if (input.requirementKey && (!journeyRequirement || !journeyRequirement.documentType || !policy?.allowedDocumentTypes.includes(journeyRequirement.documentType))) throw new HttpError(409, 'DOCUMENT_REQUIREMENT_NOT_ACTIVE', 'The requested document requirement is not active for this conversation.');
-      const documentOpportunityId = conversationState.intentProgress?.entries[requestedIntentKey]?.journeyId ?? null;
+      const documentOpportunityId = userIntentDoc?.opportunityId ?? conversationState.intentProgress?.entries[requestedIntentKey]?.journeyId ?? null;
       if (!documentOpportunityId) throw new HttpError(409, 'DOCUMENT_PACKAGE_NOT_CONFIRMED', 'A confirmed package selection is required before document upload.');
+      if (isV2 && userIntentDoc && userIntentDoc.currentStageKey !== 'document_upload' && !preQuoteV2DocumentUpload) {
+        throw new HttpError(409, 'DOCUMENT_STAGE_NOT_ACTIVE', 'Document upload is only permitted during the document upload stage.');
+      }
       const confirmedPackage = (await store.listPackageSelections(session.tenantId, documentOpportunityId)).find((selection) =>
         selection.status === 'confirmed' && selection.sessionId === session.id && selection.opportunityId === documentOpportunityId && selection.quoteId);
-      const packageOffering = confirmedPackage ? await store.getPackageOffering(confirmedPackage.packageOfferingId, session.tenantId) : null;
+      let packageOffering = confirmedPackage ? await store.getPackageOffering(confirmedPackage.packageOfferingId, session.tenantId) : null;
       const quote = confirmedPackage?.quoteId ? await store.getQuote(confirmedPackage.quoteId, session.tenantId) : null;
-      if (!confirmedPackage || !packageOffering || !quote || quote.status !== 'approved'
-        || quote.opportunityId !== documentOpportunityId || quote.packageOfferingId !== packageOffering.id
-        || Date.parse(quote.validUntil) <= Date.now() || packageOffering.approvalStatus !== 'approved'
+      if (preQuoteV2DocumentUpload && !packageOffering) {
+        const requestedPackage = userIntentDoc?.verifiedFacts.package_choice?.maskedValue.toLocaleLowerCase('en-US') ?? '';
+        packageOffering = (await store.listPackageOfferings(session.tenantId, { catalogVersionRef: v2Version!.catalogVersionRef }))
+          .find((candidate) => candidate.packageKey.toLocaleLowerCase('en-US') === requestedPackage
+            || candidate.name.toLocaleLowerCase('en-US').includes(requestedPackage)
+            || requestedPackage.includes(candidate.packageKey.toLocaleLowerCase('en-US')))
+          ?? null;
+      }
+      if ((!preQuoteV2DocumentUpload && (!confirmedPackage || !quote || quote.status !== 'approved'))
+        || !packageOffering
+        || (!preQuoteV2DocumentUpload && (quote!.opportunityId !== documentOpportunityId || quote!.packageOfferingId !== packageOffering.id
+          || Date.parse(quote!.validUntil) <= Date.now()))
+        || packageOffering.approvalStatus !== 'approved'
         || (v2Version ? packageOffering.catalogVersionRef !== v2Version.catalogVersionRef : packageOffering.catalogVersionId !== version?.id))
         throw new HttpError(409, 'DOCUMENT_PACKAGE_NOT_CONFIRMED', 'A current approved quotation and confirmed package are required before document upload.');
       // Legacy single-document intake may omit requirementKey. Multi-document

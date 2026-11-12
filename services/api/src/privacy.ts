@@ -103,7 +103,7 @@ export const maskPii = (input: string): MaskResult => {
   replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, 'EMAIL');
   replace(/(?<!\w)(?:\+?\d[\d ()-]{7,}\d)(?!\w)/g, 'PHONE');
   const nameComponent = String.raw`[\p{L}\d]+(?:['’\-][\p{L}\d]+)*`;
-  const nonNameOpeners = new Set(['a', 'an', 'available', 'based', 'building', 'calling', 'contacting', 'exploring', 'from', 'happy', 'here', 'interested', 'looking', 'need', 'new', 'planning', 'ready', 'seeking', 'setting', 'starting', 'the', 'trying', 'unable', 'want']);
+  const nonNameOpeners = new Set(['a', 'an', 'available', 'based', 'building', 'calling', 'confirming', 'contacting', 'exploring', 'from', 'happy', 'here', 'interested', 'looking', 'need', 'new', 'planning', 'ready', 'seeking', 'setting', 'starting', 'the', 'trying', 'unable', 'want']);
   const introductionName = new RegExp(String.raw`\b(?:my name(?:\s+for\s+(?:this\s+)?(?:synthetic\s+)?test)?\s+is|i am|i'm)\s+(${nameComponent}(?:\s+(?!(?:and|but|i|i'm|im|need|want|for|from|with|please)\b)${nameComponent}){0,3})(?=\s*(?:[,.!?;]|$|\b(?:and|but|i|i'm|im|need|want|for|from|with|please)\b))`, 'giu');
   replaceName(introductionName, (name) => !nonNameOpeners.has(name.split(/\s+/u)[0]?.toLocaleLowerCase('en-US') ?? ''));
   replace(/\b(?:passport|account|customer|member)[ #:-]*[A-Z0-9-]{4,}\b/gi, 'ID');

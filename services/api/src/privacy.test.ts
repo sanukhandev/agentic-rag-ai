@@ -27,6 +27,7 @@ describe('privacy boundary', () => {
     expect(rehydrateForSession(session, result.masked, vault, 'workflow_payload')).not.toContain('Alice Karim');
     expect(rehydrateForSession(session, result.masked, vault, 'assistant_response')).toContain('Alice Karim');
     expect(maskPii('I am interested in a demo.').masked).toBe('I am interested in a demo.');
+    expect(maskPii('Yes, I am confirming the lead submission.').masked).toBe('Yes, I am confirming the lead submission.');
     expect(maskPii('I am Alice.').masked).toBe('[NAME_1].');
     expect(maskPii('My name is N8n Tester.').masked).toBe('[NAME_1].');
     expect(maskPii('My name is Alice smith.').masked).toBe('[NAME_1].');

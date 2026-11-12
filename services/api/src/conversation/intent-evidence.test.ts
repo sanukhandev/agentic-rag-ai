@@ -48,8 +48,18 @@ describe('V2 catalog-backed contextual customer intent evidence', () => {
     'I want to open a small IT consultancy.',
     'I am planning to start a technology consulting company in Ajman.',
     'I am thinking of setting up a business.',
+    'That sounds good — let us go ahead with the company setup.',
+    'Go ahead with the company setup.',
   ])('recognizes reviewed natural formation variants: %s', text => {
     const result = current(text, [], sevenStageCatalog);
+    expect(result.candidateGoalKeys).toEqual(['anc.company_formation']);
+    expect(result.initiation).toBe('explicit');
+    expect(result.initiationSupported).toBe(true);
+  });
+
+  it('recognizes contextual confirmation with prior formation history', () => {
+    const history = [{ messageId: 'previous-customer-12345678', text: 'Need a free-zone company formation' }];
+    const result = current('Confirmed. Start the enquiry.', history, sevenStageCatalog);
     expect(result.candidateGoalKeys).toEqual(['anc.company_formation']);
     expect(result.initiation).toBe('explicit');
     expect(result.initiationSupported).toBe(true);

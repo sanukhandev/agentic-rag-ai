@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { Pool } from 'pg';
 import { createApp } from './app.js';
 import { attachChatStream, type ChatStreamMessageFrame } from './chat-stream.js';
-import { AzureEmbeddingProvider } from './embedding.js';
+import { embeddingProviderFromEnv } from './embedding.js';
 import { pythonSummaryModelFromEnv } from './python-model/chat-model-adapter.js';
 import { createCache } from './cache.js';
 import { MemoryStore } from './store-memory.js';
@@ -21,7 +21,7 @@ const pool = process.env.STORE === 'postgres' && process.env.DATABASE_URL ? new 
 const store = pool ? new PostgresStore(pool) : new MemoryStore();
 const cache = createCache(process.env.REDIS_URL);
 const chatTurnQueue = process.env.REDIS_URL && process.env.CHAT_STREAM_INTERNAL_SECRET ? new RedisChatTurnQueue(process.env.REDIS_URL) : undefined;
-const embedding = process.env.AZURE_AI_ENDPOINT && process.env.AZURE_AI_EMBEDDING_DEPLOYMENT && process.env.AZURE_AI_API_KEY && process.env.AZURE_AI_API_VERSION ? new AzureEmbeddingProvider(process.env.AZURE_AI_ENDPOINT, process.env.AZURE_AI_EMBEDDING_DEPLOYMENT, process.env.AZURE_AI_API_KEY, process.env.AZURE_AI_API_VERSION, Number(process.env.AZURE_AI_EMBEDDING_DIMENSION ?? 1536)) : undefined;
+const embedding = embeddingProviderFromEnv();
 // The canonical turn coordinator is the only active chat planner. The legacy
 // model adapter remains available only for the separate CRM summary route.
 const model = undefined;
@@ -61,12 +61,22 @@ const stream = attachChatStream(server, {
       return session.tenantId;
     },
     handleQueuedMessage: async (sessionId: string, sessionTokenHash: string, frame: ChatStreamMessageFrame, origin: string) => {
-      const response = await fetch(`http://127.0.0.1:${port}/api/v1/chat/messages`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-agentic-session-token-hash': sessionTokenHash, 'x-agentic-internal-secret': process.env.CHAT_STREAM_INTERNAL_SECRET!, origin: origin || process.env.WEB_ORIGIN || 'http://localhost' },
-        body: JSON.stringify({ sessionId, type: 'text', message: frame.message, clientMessageId: frame.clientMessageId, ...(frame.postbackValue ? { postbackValue: frame.postbackValue } : {}) }),
-      });
-      const payload: unknown = await response.json().catch(() => null);
+      const postMessage = async (): Promise<{ response: Response; payload: unknown }> => {
+        const response = await fetch(`http://127.0.0.1:${port}/api/v1/chat/messages`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-agentic-session-token-hash': sessionTokenHash, 'x-agentic-internal-secret': process.env.CHAT_STREAM_INTERNAL_SECRET!, origin: origin || process.env.WEB_ORIGIN || 'http://localhost' },
+          body: JSON.stringify({ sessionId, type: 'text', message: frame.message, clientMessageId: frame.clientMessageId, ...(frame.postbackValue ? { postbackValue: frame.postbackValue } : {}) }),
+        });
+        return { response, payload: await response.json().catch(() => null) };
+      };
+      let result = await postMessage();
+      const firstError = typeof result.payload === 'object' && result.payload !== null && 'error' in result.payload ? result.payload.error : null;
+      const firstErrorCode = typeof firstError === 'object' && firstError !== null && 'code' in firstError && typeof firstError.code === 'string' ? firstError.code : null;
+      if (!result.response.ok && firstErrorCode === 'V2_STALE_SESSION') {
+        await new Promise<void>((resolve) => setTimeout(resolve, 100));
+        result = await postMessage();
+      }
+      const { response, payload } = result;
       if (!response.ok) {
         const error = typeof payload === 'object' && payload !== null && 'error' in payload ? payload.error : null;
         const errorRecord = typeof error === 'object' && error !== null ? error as Record<string, unknown> : null;

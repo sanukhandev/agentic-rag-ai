@@ -9,6 +9,10 @@ describe('V2 knowledge preflight', () => {
     expect(isV2FactualKnowledgeQuestion('can you tell me about the process of starting a company in ajman freezone')).toBe(true);
     expect(isV2FactualKnowledgeQuestion('What are the documents required to set up my company?')).toBe(true);
     expect(isV2FactualKnowledgeQuestion('How much does an Ajman free zone licence cost?')).toBe(true);
+    expect(isV2FactualKnowledgeQuestion('Hey, how many visas can the package support?')).toBe(true);
+    expect(isV2FactualKnowledgeQuestion('How much does it cost to set up a business?')).toBe(true);
+    expect(isV2FactualKnowledgeQuestion('Which documents are normally needed to start a company?')).toBe(true);
+    expect(isV2FactualKnowledgeQuestion('What documents do I need to start a business?')).toBe(true);
     expect(isV2FactualKnowledgeQuestion('Hello')).toBe(false);
     expect(isV2FactualKnowledgeQuestion('Yes, I confirm the goal')).toBe(false);
   });

@@ -81,7 +81,9 @@ async function uploadDocument(session, responseSummary, profile) {
       contentBase64: content.toString('base64'),
       processingConsent: true,
       ...(responseSummary.pendingIntentKey ? { primaryIntentKey: responseSummary.pendingIntentKey } : {}),
-      ...(responseSummary.pendingRequirementKey ? { requirementKey: responseSummary.pendingRequirementKey } : {}),
+      // The chat prompt may be asking for consent, not naming a document
+      // requirement. Let the V2 route resolve the sole required document from
+      // the pinned package instead of sending a consent key as a document key.
     };
     const response = await fetch(`${apiBase}/api/v1/chat/sessions/${session.sessionId}/documents`, {
       method: 'POST',
@@ -444,6 +446,7 @@ async function runCase(testCase) {
   const transcript = [];
   const documentUploads = [];
   let documentUploadAttempted = false;
+  let documentUploadPendingConsent = false;
   let status = 'completed';
   try {
     await socket.connect(session);
@@ -454,8 +457,16 @@ async function runCase(testCase) {
         const result = await socket.sendTurn(userMessage);
         const responseSummary = summarizeResponse(result.response, testCase.profile);
         let documentUpload = null;
-        if (testCase.documentPolicy === 'on_request' && !documentUploadAttempted && isDocumentRequested(result.answer, responseSummary)) {
+        const uploadWasPendingConsent = documentUploadPendingConsent;
+        if (testCase.documentPolicy === 'on_request' && !documentUploadAttempted
+          && responseSummary.pendingRequirementKey === 'document_processing_consent'
+          && isDocumentRequested(result.answer, responseSummary)) {
+          documentUploadPendingConsent = true;
+        }
+        if (testCase.documentPolicy === 'on_request' && !documentUploadAttempted
+          && (uploadWasPendingConsent || (responseSummary.pendingRequirementKey !== 'document_processing_consent' && isDocumentRequested(result.answer, responseSummary) && !documentUploadPendingConsent))) {
           documentUploadAttempted = true;
+          documentUploadPendingConsent = false;
           documentUpload = await uploadDocument(session, responseSummary, testCase.profile);
           documentUploads.push(documentUpload);
         }
