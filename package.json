@@ -33,7 +33,10 @@
     "db:migrate:vm": "node scripts/migrate-vm.mjs",
     "test:unit": "npm run test --workspaces --if-present",
     "lint:ui": "eslint --config .github/eslint-ui.config.mjs \"apps/web/**/*.{ts,tsx}\" \"apps/admin/src/**/*.ts\" --max-warnings 0",
-    "check:null-safety": "node scripts/check-typescript-null-safety.mjs"
+    "check:null-safety": "node scripts/check-typescript-null-safety.mjs",
+    "p7:validate": "node --test scripts/p7-uat-gates.test.mjs",
+    "p7:dry-run": "node scripts/p7-azure-uat.mjs --dry-run",
+    "p7:azure": "node scripts/p7-azure-uat.mjs --run"
   },
   "devDependencies": {
     "@angular/compiler": "^21.2.26"

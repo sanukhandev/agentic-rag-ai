@@ -52,3 +52,7 @@ The 90% figure is a **proposed release threshold**, not an achieved or previousl
 
 ## Reporting
 Publish commit SHA, environment, provider profile, test commands, scenario count, failures by reason, percent acceptable, confidence estimate, tool budget, p95 latency and unresolved limitations. Do not claim complete customer journeys based on mocked provider responses.
+
+## P7 local Azure conversation suite
+
+The P7 implementation is at [10-p7-azure-uat.md](10-p7-azure-uat.md). Run `npm run p7:validate` and `npm run p7:dry-run` without credentials; the opt-in local Azure suite is `npm run p7:azure` and requires two synthetic canary tenants, an approved Beta-only sentinel and PostgreSQL read-only fingerprints. A green HTTP run is **not** a quality verdict. Independent reviews and an equivalent V2 read-only baseline remain mandatory before release approval.
