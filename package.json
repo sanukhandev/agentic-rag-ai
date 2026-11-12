@@ -9,6 +9,7 @@
   "scripts": {
     "build": "npm run build --workspace packages/chat-utils && npm run build --workspaces --if-present",
     "verify:compose": "node scripts/verify-compose.mjs",
+    "verify:compose:local": "node scripts/verify-compose-local.mjs",
     "verify:conversation-boundary": "node scripts/verify-conversation-engine-boundary.mjs",
     "verify:n8n:salesforce": "node scripts/verify-n8n-salesforce-lead-runtime.mjs",
     "acceptance:n8n:remote": "node scripts/acceptance-remote-n8n.mjs",

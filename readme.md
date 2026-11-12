@@ -45,6 +45,9 @@ Approved external action
 11. [Migration and rollout](docs/09-migration-plan.md)
 
 ## Development
+For Windows and Docker Desktop local startup, PostgreSQL host access, and the
+isolated P2 integration database, see [Local Docker Compose guide](docs/local-docker-compose.md).
+
 Use the repository's existing Docker Compose and package scripts as the implementation source of truth. Inspect docker-compose.yml, .env.example and package.json for current commands and services. Do not interpret healthy containers as proof of good conversation quality or successful external workflows.
 
 Never run destructive volume/database cleanup, overwrite published tenant data, or alter existing embeddings as part of the conversation-engine refactor.

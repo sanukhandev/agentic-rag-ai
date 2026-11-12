@@ -330,7 +330,7 @@ services:
     container_name: agentic-nginx
     restart: unless-stopped
     ports:
-      - "${APP_BIND_ADDRESS:-127.0.0.1}:80:80"
+      - "${APP_BIND_ADDRESS:-127.0.0.1}:${APP_HOST_PORT:-80}:80"
     depends_on:
       api:
         condition: service_healthy
