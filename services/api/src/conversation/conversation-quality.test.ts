@@ -67,6 +67,7 @@ describe('V2 conversation quality boundaries', () => {
     ['Can you open a bank account for me?', true],
     ['Do you do mainland licences?', true],
     ['كم سعر الباقة المميزة؟', true],
+    ['can you help me start a company', false],
     ['Hello', false],
     ['Yes', false],
   ])('evaluates factual knowledge question %s as %s', (message, expected) => {

@@ -9,6 +9,9 @@ import type { V2ApprovedEvidence } from './evidence.js';
  * Never treat a Business Goal catalog as a substantive knowledge document. */
 export const isV2FactualKnowledgeQuestion = (message: string): boolean => {
   const value = message.toLocaleLowerCase('en-US');
+  if (/\b(?:can|could|would)\s+(?:you\s+)?(?:help|assist|guide|support)\s*(?:me|us)?\s+(?:to\s+|in\s+)?(?:start|begin|register|form|incorporate|set[\s-]?up|open|establish|create|launch)\b/u.test(value)) {
+    return false;
+  }
   const factual = /\b(?:process|procedure|steps?|how (?:do|can|to|does|many|much)|which (?:documents?|packages?|options?|licen[cs]e|activities|visas?)|what (?:is|are|documents?|requirements?|changes?)|tell me (?:about|how)|explain|costs?|pricing|prices?|fees?|licen[cs]e|eligib\w*|regulations?|rules?|timeline|how long|visa requirements?)\b/u.test(value)
     || /\b(?:can (?:i|we|you)|do (?:i|we|you)|is (?:it|there)|are (?:there|we))\b/u.test(value);
   const subject = /\b(?:company|companies|business|free[\s-]?zone|formation|incorporat\w*|registr\w*|setup|set[\s-]?up|license|licence|visas?|packages?|documents?|requirements?|ajman|presence|present|physical|remote|remotely|desk|flexi|office|space|facility|facilities|bank|account|mainland)\b/u.test(value);
