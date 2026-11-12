@@ -304,6 +304,8 @@ export interface AppDependencies {
   v2Coordinator?: ConversationTurnCoordinator;
   /** Private P4 callback, opt-in and not exposed through /api routes. */
   p4ReadGateway?: (app: Express) => void;
+  /** Explicitly allowlisted, separate P6 preview API; never replaces the V2 route. */
+  p6CandidateApi?: (app: Express) => void;
   v2AccountOtp?: V2OtpChallengeService | DurableV2OtpChallengeService;
   v2AccountProvider?: DeterministicV2AccountProvider;
   v2SalesforceLeadProvider?: SalesforceSandboxLeadReadbackProvider;
@@ -2797,6 +2799,9 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   app.post('/api/v1/admin/intent-vocabulary/:id/reject', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => { try { const tenantId = await tenantForRequest(store, req); const reason = typeof req.body?.reason === 'string' && req.body.reason.trim() ? req.body.reason.trim().slice(0, 200) : undefined; res.json({ candidate: await vocabulary.reject(tenantId, routeParam(req, 'id'), reason) }); } catch (error) { next(error); } });
   app.post('/api/v1/admin/intent-vocabulary/:id/rollback', protectedApi, requireRoles('platform_admin', 'tenant_admin'), async (req, res, next) => { try { res.json({ candidate: await vocabulary.rollback(await tenantForRequest(store, req), routeParam(req, 'id')) }); } catch (error) { next(error); } });
   app.get('/api/v1/chat/config', chatApi, async (req, res, next) => { try { const channel = getChannel(req); const tenantSlug = typeof req.query.tenantSlug === 'string' ? req.query.tenantSlug : ''; if (channel && tenantSlug) throw new HttpError(400, 'CHANNEL_TENANT_INPUT_FORBIDDEN', 'Channel credentials resolve the tenant from the channel key.'); const tenant = channel ? await store.getTenant(channel.tenantId) : await store.getTenantBySlug(tenantSlug); if (!tenant || tenant.status !== 'active' || (!channel && !tenant.publicChatEnabled)) throw new HttpError(404, 'TENANT_NOT_FOUND', 'Tenant not found.'); if (channel && channel.tenantId !== tenant.id) throw new HttpError(403, 'TENANT_FORBIDDEN', 'Tenant access denied.'); if (getAuth(req) && !ensureTenant(req, tenant.id)) throw new HttpError(403, 'TENANT_FORBIDDEN', 'Tenant access denied.'); if (!getAuth(req) && !channel) enforcePublicOrigin(req, tenant, nodeEnv); const persona = await store.getPersona(tenant.id); res.json({ tenant: { slug: tenant.slug, name: tenant.name }, persona: persona ? { name: persona.name, greeting: persona.greeting, tone: persona.tone, speakingStyle: persona.speakingStyle, permittedLanguages: persona.permittedLanguages, voiceName: persona.voiceName, voiceLanguage: persona.voiceLanguage, voiceRate: persona.voiceRate, voicePitch: persona.voicePitch, voiceVolume: persona.voiceVolume } : null, documents: await documentConfig(tenant.id) }); } catch (error) { next(error); } });
+
+  // After the normal /api rate limiting and JSON parsing middleware.
+  dependencies.p6CandidateApi?.(app);
 
   app.use((error: unknown, req: Request, res: Response, next: NextFunction) => {
     const requestId = (req as AuthedRequest).requestId ?? randomUUID();

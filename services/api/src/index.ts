@@ -7,6 +7,13 @@ import { registerP3ReadTools } from './conversation-core/adapters/rag-read-tool.
 import { ScopedP3ReadTools } from './conversation-core/adapters/read-tool-scope.js';
 import { P4EvidenceSigner } from './conversation-core/adapters/evidence-receipt.js';
 import { registerP4ReadRoute } from './conversation-core/adapters/p4-read-route.js';
+import { P4ClaimVerifier } from './conversation-core/adapters/p4-evidence-verifier.js';
+import { P5PinnedCatalogReader } from './conversation-core/adapters/p5-catalog.js';
+import { createP5CandidateEngine } from './conversation-core/adapters/p5-candidate-factory.js';
+import { SessionScopedPrivacyAdapter } from './conversation-core/adapters/privacy-adapter.js';
+import { PostgresScopedPrivacyVault } from './conversation-core/adapters/p6-session-vault.js';
+import { P6TrustedActionStateReader } from './conversation-core/adapters/p6-trusted-action-state.js';
+import { registerP6CandidateRoute } from './conversation-core/adapters/p6-candidate-route.js';
 import { createHash } from 'node:crypto';
 import { Pool } from 'pg';
 import { createApp } from './app.js';
@@ -45,18 +52,54 @@ const v2Coordinator = process.env.PYTHON_MODEL_URL && process.env.MODEL_GATEWAY_
   )
   : undefined;
 let p4ReadGateway: ((app: Express) => void) | undefined;
+let p6CandidateApi: ((app: Express) => void) | undefined;
+const p6Enabled = process.env.P6_CANDIDATE_ENABLED === 'true';
+if (p6Enabled && (
+  process.env.P4_INTERNAL_READS_ENABLED !== 'true'
+  || process.env.P4_GATEWAY_ENABLED !== 'true'
+  || process.env.P5_CANDIDATE_ENABLED !== 'true'
+  || process.env.V2_GROUNDING_ENTAILMENT_MODE !== 'enforce')) {
+  throw new Error('P6 requires P3/P4/P5 private reads and enforced grounding; flags cannot be bypassed.');
+}
 if (process.env.P4_INTERNAL_READS_ENABLED === 'true') {
-  if (!pool || !embedding) throw new Error('P4 private tool gateway requires PostgreSQL and configured embeddings.');
-  const readOnlyRepository = new PostgresConversationRepository(pool, new ExistingSessionTokenAuthorizer(store), {
-    async assertSafeMaskedText(): Promise<void> { throw new Error('P4 read-only gateway cannot persist conversation data'); },
+  if (!pool || !embedding) throw new Error('Private tool gateway requires PostgreSQL and configured embeddings.');
+  const authorizer = new ExistingSessionTokenAuthorizer(store);
+  const readOnlyRepository = new PostgresConversationRepository(pool, authorizer, {
+    async assertSafeMaskedText(): Promise<void> { throw new Error('Private read gateway cannot persist data'); },
   });
   const registry = new NodeReadToolRegistry();
   registerP3ReadTools(registry, { repository: readOnlyRepository, store, embedding });
   const tools = new ScopedP3ReadTools(process.env.P4_READ_SCOPE_SECRET ?? '', readOnlyRepository, store, registry);
   const signer = new P4EvidenceSigner(process.env.P4_EVIDENCE_SIGNING_KEY ?? '');
   p4ReadGateway = (app: Express) => registerP4ReadRoute(app, tools, signer, process.env.MODEL_GATEWAY_SERVICE_KEY ?? '');
+
+  if (p6Enabled) {
+    if (!process.env.PYTHON_MODEL_URL || !process.env.MODEL_GATEWAY_SERVICE_KEY
+      || !process.env.PII_VAULT_KEY) throw new Error('P6 requires private Python, gateway and PII vault credentials.');
+    const allowedTenants = new Set((process.env.P6_CANARY_TENANT_IDS ?? '')
+      .split(',').map(id => id.trim()).filter(Boolean));
+    if (allowedTenants.size === 0 || [...allowedTenants].some(id =>
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(id))) {
+      throw new Error('P6 requires an explicit UUID tenant canary allowlist');
+    }
+    const vault = new PostgresScopedPrivacyVault(pool, authorizer, process.env.PII_VAULT_KEY);
+    const privacy = new SessionScopedPrivacyAdapter(vault);
+    const repository = new PostgresConversationRepository(pool, authorizer, privacy);
+    const verifier = new P4ClaimVerifier(signer, store,
+      new HttpV2GroundingVerifier(process.env.PYTHON_MODEL_URL, process.env.MODEL_GATEWAY_SERVICE_KEY));
+    const engine = createP5CandidateEngine({
+      repository, tools, verifier, privacy, catalogReader: new P5PinnedCatalogReader(store),
+      actions: new P6TrustedActionStateReader(store, authorizer),
+      pythonUrl: process.env.PYTHON_MODEL_URL, serviceKey: process.env.MODEL_GATEWAY_SERVICE_KEY,
+    });
+    p6CandidateApi = (app: Express) => registerP6CandidateRoute(app, {
+      store, pool, engine, vault, allowedTenantIds: allowedTenants,
+      sessionTtlMs: Number(process.env.CHAT_SESSION_TTL_MS ?? 600_000),
+      nodeEnv, localOrigin: process.env.WEB_ORIGIN ?? 'http://localhost',
+    });
+  }
 }
-const { app } = createApp({ store, cache, nodeEnv, ...(model ? { model } : {}), ...(summaryModel ? { summaryModel } : {}), ...(embedding ? { embedding } : {}), ...(v2Coordinator ? { v2Coordinator } : {}), ...(p4ReadGateway ? { p4ReadGateway } : {}) });
+const { app } = createApp({ store, cache, nodeEnv, ...(model ? { model } : {}), ...(summaryModel ? { summaryModel } : {}), ...(embedding ? { embedding } : {}), ...(v2Coordinator ? { v2Coordinator } : {}), ...(p4ReadGateway ? { p4ReadGateway } : {}), ...(p6CandidateApi ? { p6CandidateApi } : {}) });
 const server = createServer(app);
 const streamError = (code: string, message: string): Error & { code: string } => Object.assign(new Error(message), { code });
 const streamResponse = (payload: unknown): Record<string, unknown> =>

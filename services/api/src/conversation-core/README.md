@@ -70,3 +70,13 @@ A `completed` value in the legacy action table **cannot** be represented as veri
 ### P5 provisional goal continuity
 
 The P2 namespaced `conversationCore` JSON now retains bounded `provisionalGoalKeys` as *unconfirmed model hypotheses* after an authorized turn commit. The next P5 model context can use them alongside the durable summary and recent turns; they are never permission, customer authorization or goal confirmation. Invalid/unpublished keys are filtered at projection time. Published goal descriptions/examples and requirements are redacted before model access. The persisted customer facts remain subject to the existing encrypted privacy boundary.
+
+## P6 — Private canary API, durable privacy and action-state reader
+
+- `p6-session-vault.ts` integrates the existing encrypted AES-GCM `TokenVault` with the already deployed `session_tokens` ciphertext table, always under a locked authorized `chat_sessions` row. Token assignment is durable across worker restarts and does **not** increment the P2 conversation revision. Raw customer values never enter `chat_messages` or model input.
+- `p6-trusted-action-state.ts` reuses authenticated V2 goal/journey/catalog-stage authority, persisted purpose-scoped consent and independently approved actions; it never converts a proposed goal, consent prompt or model suggestion to customer authorization. Existing approved action is required for any further action proposal; this deliberately keeps new external writes disabled.
+- `p6-candidate-route.ts` adds `POST /api/v1/chat/candidate/turn` only under `P6_CANDIDATE_ENABLED=true` and `P6_CANARY_TENANT_IDS`, with origin, tenant, token, expiry and legacy-session isolation. It returns a compatible `answer`, `citations`, `grounded` response, without exposing unapproved action proposals.
+- `services/api/src/index.ts` wires the candidate behind **all** prerequisites: private P3 tool gateway, P4/P5 opt-in flags, enforced independent grounding and a durable PII vault key. All flags default to false. The existing V2 `/api/v1/chat/messages` route and WebSocket handler remain unchanged.
+- Private P4 tool callbacks remain independently authenticated. P6 model responses still pass verified evidence, privacy and action gates before the P2 repository commits them.
+
+Remaining before release: code and integration CI, expired-token/revocation tests, real Azure UAT and grounded false-rejection audit, external stage/consent workflow confirmation, and controlled API/UI canary end-to-end benchmarks. No migration, RAG data mutation, external CRM write or main-branch merge was made by P6.
