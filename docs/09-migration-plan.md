@@ -61,6 +61,6 @@ Never reset or rewrite existing PostgreSQL volumes/tables, pgvector embeddings, 
 
 ## P6 candidate-only integration (not the final cutover)
 
-A new canary API and independent Next.js preview transport are isolated behind three gates: `P6_CANDIDATE_ENABLED=true`, `P6_CANARY_TENANT_IDS` and build-time `NEXT_PUBLIC_P6_PREVIEW_ENABLED=true`. Startup also requires the private read gateway, P4/P5 model flags, independent claim grounding and session-scoped AES-GCM vault credentials.
+A new canary API and independent Next.js preview transport are isolated behind three gates: `P6_CANDIDATE_ENABLED=true`, `P6_CANARY_TENANT_IDS` and build-time `NEXT_PUBLIC_P6_PREVIEW_ENABLED=true`. Startup also requires the private read gateway, P4/P5 model flags, a separate enforced P6 claim verifier and session-scoped AES-GCM vault credentials.
 
 **Do not turn on these flags on production tenants.** The new core persists candidate turns but does not currently populate V2 `user_intent_documents` or drive seven-stage action state for fresh conversations. It must not claim to have created/updated Salesforce, generated an invoice or completed a business workflow. P7 acceptance requires an explicit consent and action-authority integration, real Azure UAT, full P6 local tests, tenant-isolation/rollback verification and a side-by-side quality/latency assessment.

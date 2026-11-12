@@ -57,9 +57,8 @@ const p6Enabled = process.env.P6_CANDIDATE_ENABLED === 'true';
 if (p6Enabled && (
   process.env.P4_INTERNAL_READS_ENABLED !== 'true'
   || process.env.P4_GATEWAY_ENABLED !== 'true'
-  || process.env.P5_CANDIDATE_ENABLED !== 'true'
-  || process.env.V2_GROUNDING_ENTAILMENT_MODE !== 'enforce')) {
-  throw new Error('P6 requires P3/P4/P5 private reads and enforced grounding; flags cannot be bypassed.');
+  || process.env.P5_CANDIDATE_ENABLED !== 'true')) {
+  throw new Error('P6 requires P3/P4/P5 private reads; independent P6 claim verification is mandatory.');
 }
 if (process.env.P4_INTERNAL_READS_ENABLED === 'true') {
   if (!pool || !embedding) throw new Error('Private tool gateway requires PostgreSQL and configured embeddings.');
