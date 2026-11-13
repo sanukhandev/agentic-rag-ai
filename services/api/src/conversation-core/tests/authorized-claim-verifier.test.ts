@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { P4EvidenceSigner } from '../adapters/evidence-receipt.js';
-import { P4ClaimVerifier } from '../adapters/p4-evidence-verifier.js';
+import { EvidenceClaimVerifier } from '../adapters/authorized-claim-verifier.js';
 import type { ModelCandidate, SessionSnapshot, TrustedActor } from '../contracts.js';
 import type { Store, Source, Chunk } from '../../types.js';
-import type { V2GroundingVerifier } from '../../conversation/grounding-verifier.js';
+import type { GroundingReviewer } from '../authorization/grounding.js';
 
 const actor: TrustedActor = { tenantId: 'tenant-1', sessionId: 'session-1', principalId: 'e'.repeat(64), role: 'customer' };
 const scope = 'scoped-opaque-capability';
@@ -35,8 +35,8 @@ function fixture() {
         verdict: reviewed ? 'supported' : 'insufficient',
       }));
     },
-  } as V2GroundingVerifier;
-  const verifier = new P4ClaimVerifier(signer, store, grounding);
+  } as GroundingReviewer;
+  const verifier = new EvidenceClaimVerifier(signer, store, grounding);
   const combined = { ...candidate, evidenceReceipts: [proof] };
   return { signer, proof, verifier, combined, setNow: (value: number) => { now = value; },
     revoke: () => { current = { ...current, status: 'revoked' }; },

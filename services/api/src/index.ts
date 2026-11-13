@@ -7,7 +7,7 @@ import { registerP3ReadTools } from './conversation-core/adapters/rag-read-tool.
 import { ScopedP3ReadTools } from './conversation-core/adapters/read-tool-scope.js';
 import { P4EvidenceSigner } from './conversation-core/adapters/evidence-receipt.js';
 import { registerP4ReadRoute } from './conversation-core/adapters/p4-read-route.js';
-import { P4ClaimVerifier } from './conversation-core/adapters/p4-evidence-verifier.js';
+import { EvidenceClaimVerifier } from './conversation-core/adapters/authorized-claim-verifier.js';
 import { P5PinnedCatalogReader } from './conversation-core/adapters/p5-catalog.js';
 import { createP5CandidateEngine } from './conversation-core/adapters/p5-candidate-factory.js';
 import { SessionScopedPrivacyAdapter } from './conversation-core/adapters/privacy-adapter.js';
@@ -84,7 +84,7 @@ if (process.env.P4_INTERNAL_READS_ENABLED === 'true') {
     const vault = new PostgresScopedPrivacyVault(pool, authorizer, process.env.PII_VAULT_KEY);
     const privacy = new SessionScopedPrivacyAdapter(vault);
     const repository = new PostgresConversationRepository(pool, authorizer, privacy);
-    const verifier = new P4ClaimVerifier(signer, store,
+    const verifier = new EvidenceClaimVerifier(signer, store,
       new HttpV2GroundingVerifier(process.env.PYTHON_MODEL_URL, process.env.MODEL_GATEWAY_SERVICE_KEY));
     const engine = createP5CandidateEngine({
       repository, tools, verifier, privacy, catalogReader: new P5PinnedCatalogReader(store),
