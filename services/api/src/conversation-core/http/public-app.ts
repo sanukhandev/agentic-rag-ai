@@ -3,7 +3,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { AuthService, authMiddleware, type AuthedRequest } from '../../auth.js';
 import { ChannelSecretVault } from '../../channel-auth.js';
-import { createCache, type CacheStore } from '../../cache.js';
+import type { CacheStore } from '../../cache.js';
 import type { EmbeddingProvider } from '../../embedding.js';
 import { HttpError } from '../../http/errors.js';
 import { PrivateDocumentStorage } from '../../document-intake.js';
