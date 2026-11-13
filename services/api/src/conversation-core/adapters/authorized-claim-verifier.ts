@@ -85,9 +85,10 @@ export class EvidenceClaimVerifier implements ClaimVerifier {
     const reviews = [];
     for (const [i, clause] of consequential.entries()) {
       const claim = claims.find(row => row.text === clause || row.text.includes(clause));
-      if (!claim || !model.message.includes(claim.text) || claim.citationIds.length === 0) {
+      if (!claim || !model.message.includes(claim.text)) {
         return { ok: false, reason: 'unclaimed_consequential_text' };
       }
+      if (claim.citationIds.length === 0) return { ok: false, reason: 'unused_evidence' };
       const evidence = [];
       for (const id of claim.citationIds) {
         const source = sources.get(id);

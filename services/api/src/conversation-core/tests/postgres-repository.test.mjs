@@ -19,9 +19,8 @@ const ACTOR=customerActorFromSessionToken({tenantId:TENANT, sessionId:SESSION, s
 const reqHash=s=>createHash('sha256').update(s,'utf8').digest('hex');
 const ANSWER={message:'Hello, I can help.', evidenceRefs:[], goalCandidateKeys:[], verifiedFactPatches:[],pendingActionProposal:null};
 class FakeDb {
-  constructor(){this.sessions=new Map([[SESSION,{id:SESSION,tenant_id:TENANT,state_version:0,persona_version_id:null,conversation_state:{rollingSummary:'Previously asked about opening a company.',phase:'DISCOVERY'},closed_at:null,tenant_status:'active'}]]);
+  constructor(){this.sessions=new Map([[SESSION,{id:SESSION,tenant_id:TENANT,state_version:0,persona_version_id:null,conversation_state:{auditMarker:'preserved',conversationCore:{summary:'Pinned core summary',verifiedFacts:[{key:'business_activity',value:'Consulting',source:'customer',sourceReference:'customer-turn:test',revision:0}]}},closed_at:null,tenant_status:'active'}]]);
     this.messages=[];
-    this.intentDocs=[{summary:'Pinned older intent summary',revision:3, verified_facts:{business_activity:{maskedValue:'Consulting',source:'visitor',messageSequence:1,evidenceRefs:[],corrected:false}}}];
     this.actions=[{id:'id-1',workflow_key:'crm.lead.create',state:'completed'}];
     this.persona={id:PERSONA,name:'Alex',greeting:'Hello',personality:'helpful',tone:'friendly',speaking_style:'clear',permitted_languages:['en']};
     this.catalog={id:CATALOG,catalog_json:{sheets:{BusinessGoals:[{businessGoalKey:'company_formation',active:true}]}}};
@@ -49,7 +48,6 @@ class FakeClient {
       const matches=params[0]===TENANT && (params[1]===''||params[1]===CATALOG);
       return {rows:matches?[structuredClone(db.catalog)]:[],rowCount:matches?1:0};
     }
-    if(lower.includes('from user_intent_documents'))return {rows:db.intentDocs,rowCount:db.intentDocs.length};
     if(lower.includes('from chat_messages')&&lower.includes('client_message_id = $3')){
       const rows=db.messages.filter(x=>x.tenant_id===params[0]&&x.session_id===params[1]&&x.client_message_id===params[2]);return {rows:rows.map(x=>({role:x.role,response:x.response})),rowCount:rows.length}
     }
@@ -82,12 +80,12 @@ const commit=(repo,text='Start a company',overrides={})=>repo.commitTurn(ACTOR,{
   personaVersionId:PERSONA,catalogVersionId:CATALOG,response:ANSWER,...overrides,
 });
 
-describe('P2 Postgres conversation repository - deterministic SQL simulation',()=>{
-  it('reads existing masked summary, trusted facts, history, persona, catalog without altering state',async()=>{
+describe('Conversation core — atomic PostgreSQL repository',()=>{
+  it('reads new-core summary, verified facts, history, persona and catalog without altering state',async()=>{
     const {db,repo}=getRepo();
     const snapshot=await repo.loadAuthorizedSnapshot(ACTOR);
     assert.equal(snapshot.revision,0);
-    assert.equal(snapshot.conversationSummary,'Pinned older intent summary');
+    assert.equal(snapshot.conversationSummary,'Pinned core summary');
     assert.equal(snapshot.verifiedFacts[0].value,'Consulting');
     assert.equal(snapshot.verifiedFacts[0].source,'customer');
     assert.deepEqual(snapshot.publishedGoalKeys,['company_formation']);
@@ -95,13 +93,13 @@ describe('P2 Postgres conversation repository - deterministic SQL simulation',()
     assert.match(snapshot.personaInstructions,/Alex/);
     assert.equal(db.messages.length,0);
   });
-  it('atomically commits both turns, verified fact patch, persona/catalog pin and preserves legacy state',async()=>{
+  it('atomically commits both turns, verified fact patch, persona/catalog pin and preserves unrelated state',async()=>{
     const {db,repo}=getRepo();
     const changed=await commit(repo,'Company setup', {customerMessage:'Company setup',requestDigest:reqHash('Company setup'),response:{...ANSWER,verifiedFactPatches:[{key:'visa_count',value:'2',source:'customer',sourceReference:'turn-1',revision:1}]}});
     assert.equal(changed.revision,1);
     assert.equal(db.messages.length,2);
     assert.equal(db.messages[0].role,'user');assert.equal(db.messages[1].role,'assistant');
-    assert.equal(db.sessions.get(SESSION).conversation_state.phase,'DISCOVERY');
+    assert.equal(db.sessions.get(SESSION).conversation_state.auditMarker,'preserved');
     const latest=await repo.loadAuthorizedSnapshot(ACTOR);
     assert.equal(latest.revision,1);assert.equal(latest.personaVersionId,PERSONA);assert.equal(latest.catalogVersionId,CATALOG);
     assert.equal(latest.verifiedFacts.find(f=>f.key==='visa_count').value,'2');
@@ -157,7 +155,7 @@ describe('P2 Postgres conversation repository - deterministic SQL simulation',()
     const privacy={async prepareForModel(_actor,env){return env},async validateMaskedResponse(){}};
     const engine=new ConversationTurnEngine(repo,gateway,tools,verifier,proposals,privacy);
     const result=await engine.process(ACTOR,{clientMessageId:'engine-turn',text:'I want to open a company'});
-    assert.match(envelope.conversationSummary,/Pinned older intent summary/);
+    assert.match(envelope.conversationSummary,/Pinned core summary/);
     assert.equal(result.revision,1);assert.equal(db.messages.length,2);
     assert.equal((await engine.process(ACTOR,{clientMessageId:'engine-turn',text:'I want to open a company'})).revision,1);
     await assert.rejects(()=>engine.process(ACTOR,{clientMessageId:'engine-turn',text:'Different question'}),e=>e.code==='REPLAY_CONFLICT');
