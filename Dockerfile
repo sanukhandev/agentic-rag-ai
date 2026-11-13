@@ -34,7 +34,7 @@ CMD ["node", "services/api/dist/index.js"]
 
 FROM node-deps AS migration-runtime
 WORKDIR /workspace
-COPY scripts/migrate-local.mjs scripts/migrate-vm.mjs scripts/bootstrap-admin.mjs ./scripts/
+COPY scripts/migrate-local.mjs scripts/migrate-vm.mjs scripts/bootstrap-admin.mjs scripts/provision-app-role.mjs ./scripts/
 COPY infra/postgres ./infra/postgres
 USER node
 CMD ["node", "scripts/migrate-vm.mjs"]

@@ -39,7 +39,8 @@ services:
       PGDATABASE: agentic_rag
       PGUSER: agentic
       PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
-    command: ["node", "scripts/migrate-vm.mjs"]
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?APP_DB_PASSWORD required}
+    command: ["sh", "-c", "node scripts/migrate-vm.mjs && node scripts/provision-app-role.mjs"]
 
   admin-bootstrap:
     profiles: ["bootstrap"]
@@ -52,6 +53,8 @@ services:
         condition: service_completed_successfully
     environment:
       <<: *schema-db-env
+      PGUSER: agentic_app
+      PGPASSWORD: ${APP_DB_PASSWORD:?APP_DB_PASSWORD required}
       ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-}
     command: ["node", "scripts/bootstrap-admin.mjs"]
 
@@ -179,7 +182,7 @@ services:
       NODE_ENV: ${NODE_ENV:-development}
       PORT: 4000
       STORE: postgres
-      DATABASE_URL: postgres://agentic:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}@postgres:5432/agentic_rag
+      DATABASE_URL: postgres://agentic_app:${APP_DB_PASSWORD:?APP_DB_PASSWORD required}@postgres:5432/agentic_rag
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       REDIS_CONTEXT_TTL_SECONDS: ${REDIS_CONTEXT_TTL_SECONDS:-86400}
       REDIS_CONTEXT_ABSOLUTE_TTL_SECONDS: ${REDIS_CONTEXT_ABSOLUTE_TTL_SECONDS:-604800}
@@ -271,7 +274,7 @@ services:
         condition: service_healthy
     environment:
       NODE_ENV: ${NODE_ENV:-development}
-      DATABASE_URL: postgres://agentic:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}@postgres:5432/agentic_rag
+      DATABASE_URL: postgres://agentic_app:${APP_DB_PASSWORD:?APP_DB_PASSWORD required}@postgres:5432/agentic_rag
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       REDIS_STREAM_MAXLEN: ${REDIS_STREAM_MAXLEN:-100000}
     command: ["node", "services/api/dist/event-relay.js"]
@@ -289,7 +292,7 @@ services:
         condition: service_healthy
     environment:
       NODE_ENV: ${NODE_ENV:-development}
-      DATABASE_URL: postgres://agentic:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}@postgres:5432/agentic_rag
+      DATABASE_URL: postgres://agentic_app:${APP_DB_PASSWORD:?APP_DB_PASSWORD required}@postgres:5432/agentic_rag
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       REDIS_STREAM_MAXLEN: ${REDIS_STREAM_MAXLEN:-100000}
       N8N_INTERNAL_URL: http://n8n:5678

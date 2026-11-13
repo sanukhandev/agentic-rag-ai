@@ -8,7 +8,7 @@ for (const name of ['APP_BIND_ADDRESS', 'PUBLIC_ORIGIN']) delete env[name];
 // Dummy values are used only for static interpolation, never containers.
 for (const name of ['POSTGRES_PASSWORD', 'JWT_SECRET', 'CHANNEL_CREDENTIAL_KEY',
   'PII_VAULT_KEY', 'MODEL_GATEWAY_SERVICE_KEY', 'N8N_WEBHOOK_SECRET',
-  'INGESTION_WORKER_SECRET', 'CHAT_STREAM_INTERNAL_SECRET',
+  'INGESTION_WORKER_SECRET', 'APP_DB_PASSWORD', 'CHAT_STREAM_INTERNAL_SECRET',
   'READ_SCOPE_SECRET', 'EVIDENCE_SIGNING_KEY']) env[name] = 'ci-static-placeholder-not-a-secret';
 const run = spawnSync(docker, ['compose', '--env-file', '.env.example', '-f', 'docker-compose.yml', '--profile', 'quote', 'config', '--format', 'json'], {
   cwd: root, env, shell: process.platform === 'win32', encoding: 'utf8',
@@ -29,7 +29,9 @@ for (const [name, port] of Object.entries({ postgres: '5432', redis: '6379', n8n
 for (const name of ['postgres', 'redis', 'n8n', 'api', 'ingestion']) if (!services[name].volumes?.length) throw new Error('Missing persistent volumes: '+name);
 if (!JSON.stringify(services.postgres.healthcheck?.test).includes('-h 127.0.0.1')) throw new Error('PostgreSQL TCP readiness is required.');
 if (!services.api.healthcheck || !services.nginx.healthcheck || !services['model-gateway'].healthcheck) throw new Error('Missing health checks.');
-if (services.api.environment.PYTHON_MODEL_URL !== 'http://model-gateway:8088'
+if (!services['schema-migrate'] || !services['schema-migrate'].environment.APP_DB_PASSWORD
+  || !String(services.api.environment.DATABASE_URL).startsWith('postgres://agentic_app:')
+  || services.api.environment.PYTHON_MODEL_URL !== 'http://model-gateway:8088'
   || !services.api.environment.READ_SCOPE_SECRET
   || !services.api.environment.EVIDENCE_SIGNING_KEY
   || 'CONVERSATION_ENGINE_V2_ENABLED' in services.api.environment) {
