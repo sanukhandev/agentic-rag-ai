@@ -57,4 +57,4 @@ const report = {
   note: 'Naming markers are migration candidates, not proof of removable code. Inspect usages and protect persisted schemas.',
 };
 process.stdout.write(JSON.stringify(report, null, 2) + '\n');
-if (process.argv.includes('--check') && violations.length) process.exitCode = 1;
+if (process.argv.includes('--check') && (violations.length || markers.length)) process.exitCode = 1;
