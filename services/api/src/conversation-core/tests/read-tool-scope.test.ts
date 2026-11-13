@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { NodeReadToolRegistry } from '../read-tool-registry.js';
 import { InvalidReadScopeError, ScopedP3ReadTools } from '../adapters/read-tool-scope.js';
 import type { ConversationRepository, SessionSnapshot, TrustedActor } from '../contracts.js';
-import type { CatalogV2Document } from '../../conversation/catalog.js';
+import type { CatalogV2Document } from '../catalog/catalog.js';
 import type { Store } from '../../types.js';
 
 const actor: TrustedActor = {

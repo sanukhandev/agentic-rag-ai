@@ -1,4 +1,4 @@
-import type { IntentCatalogV2Version } from '../types.js';
+import type { IntentCatalogV2Version } from '../../types.js';
 
 export type WorkflowRoute = {
   workflowKey: string;

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import { N8nEventBridge } from './event-bus.js';
-import { validateCatalogV2 } from './conversation/catalog.js';
+import { validateCatalogV2 } from './conversation-core/catalog/catalog.js';
 import { MemoryStore } from './store-memory.js';
 
 describe('N8n document event routing', () => {
