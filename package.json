@@ -33,7 +33,10 @@
     "db:migrate:vm": "node scripts/migrate-vm.mjs",
     "test:unit": "npm run test --workspaces --if-present",
     "lint:ui": "eslint --config .github/eslint-ui.config.mjs \"apps/web/**/*.{ts,tsx}\" \"apps/admin/src/**/*.ts\" --max-warnings 0",
-    "check:null-safety": "node scripts/check-typescript-null-safety.mjs"
+    "check:null-safety": "node scripts/check-typescript-null-safety.mjs",
+    "db:integrity": "node scripts/verify-db-integrity.mjs",
+    "db:admin-bootstrap": "node scripts/bootstrap-admin.mjs",
+    "test:schema-static": "node --test scripts/db-migrations.test.mjs"
   },
   "devDependencies": {
     "@angular/compiler": "^21.2.26"

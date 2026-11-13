@@ -17,13 +17,43 @@ services:
       - "5432"
     volumes:
       - ./data/postgres:/var/lib/postgresql/data:rw
-      - ./infra/postgres:/docker-entrypoint-initdb.d:ro
+      - ./infra/postgres:/opt/agentic/migrations:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U agentic -d agentic_rag"]
       interval: 5s
       timeout: 5s
       start_period: 30s
       retries: 24
+
+  schema-migrate:
+    build:
+      <<: *node-build
+      target: migration-runtime
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment: &schema-db-env
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: agentic_rag
+      PGUSER: agentic
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
+    command: ["node", "scripts/migrate-vm.mjs"]
+
+  admin-bootstrap:
+    profiles: ["bootstrap"]
+    build:
+      <<: *node-build
+      target: migration-runtime
+    restart: "no"
+    depends_on:
+      schema-migrate:
+        condition: service_completed_successfully
+    environment:
+      <<: *schema-db-env
+      ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-}
+    command: ["node", "scripts/bootstrap-admin.mjs"]
 
   redis:
     image: redis:7.4-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
@@ -141,6 +171,8 @@ services:
         condition: service_healthy
       model-gateway:
         condition: service_healthy
+      schema-migrate:
+        condition: service_completed_successfully
     expose:
       - "4000"
     environment:

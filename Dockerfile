@@ -32,6 +32,13 @@ USER node
 EXPOSE 4000
 CMD ["node", "services/api/dist/index.js"]
 
+FROM node-deps AS migration-runtime
+WORKDIR /workspace
+COPY scripts/migrate-local.mjs scripts/migrate-vm.mjs scripts/bootstrap-admin.mjs ./scripts/
+COPY infra/postgres ./infra/postgres
+USER node
+CMD ["node", "scripts/migrate-vm.mjs"]
+
 FROM node-source AS web-build
 ARG NEXT_PUBLIC_API_URL=/
 ARG AZURE_OPENAI_DEPLOYMENT=Azure GPT-4.1-mini
