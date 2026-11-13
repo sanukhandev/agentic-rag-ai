@@ -21,8 +21,8 @@ async function assertRejected(client, query, params, code) {
 
 try {
   const ledger = await pool.query('SELECT migration_id, filename, checksum FROM agentic_schema_migrations ORDER BY migration_id');
-  assert.equal(ledger.rows.length, 76, 'Expected all 76 unique numbered schema migrations');
-  assert.equal(ledger.rows.at(-1).filename, '076-normalized-integrations-and-indexes.sql');
+  assert.equal(ledger.rows.length, 77, 'Expected all 77 unique numbered schema migrations');
+  assert.equal(ledger.rows.at(-1).filename, '077-lifecycle-tenant-integrity.sql');
   assert.ok(ledger.rows.every(row => /^[a-f0-9]{64}$/u.test(row.checksum)));
   const oldTable = await pool.query("SELECT to_regclass('public.intent_catalog_v2_versions') AS legacy, to_regclass('public.business_catalog_versions') AS current");
   assert.equal(oldTable.rows[0].legacy, null);
@@ -43,6 +43,7 @@ try {
     'document_processing_jobs_ready_idx', 'event_outbox_ready_idx',
     'event_inbox_retry_idx', 'auth_sessions_unrevoked_idx',
     'invoices_opportunity_status_idx', 'integration_attempts_reconcile_idx',
+    'invoices_provider_remote_id_ux', 'contracts_provider_remote_id_ux',
   ];
   const idx = await pool.query('SELECT indexname FROM pg_indexes WHERE schemaname=$1', ['public']);
   for (const name of keys) assert.ok(idx.rows.some(row => row.indexname === name), 'Missing index ' + name);

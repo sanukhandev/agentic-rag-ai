@@ -5,10 +5,10 @@ import { ADMIN_EMAIL, passwordIsAllowed } from './bootstrap-admin.mjs';
 
 test('schema migrations are numbered uniquely; catalog content publication is opt-in', async () => {
   const migrations = await migrationFiles();
-  assert.ok(migrations.length >= 75);
+  assert.ok(migrations.length >= 76);
   assert.equal(migrations.find(m => m.id === 72)?.name, '072-intent-vocabulary-learning.sql');
   assert.equal(migrations.some(m => m.name === '072-publish-v13-catalog.sql'), false);
-  assert.equal(migrations.at(-1)?.id, 76);
+  assert.equal(migrations.at(-1)?.id, 77);
   for (const migration of migrations) {
     assert.match(migration.checksum, /^[a-f0-9]{64}$/);
   }
