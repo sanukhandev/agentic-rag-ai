@@ -1,88 +1,47 @@
-# 03 — Conversation engine, model adapter and tool registry
+# 03 — Microsoft Foundry Agent and Python Model Gateway
 
-**Status: target contracts. Rewrite only the layers that fail this contract after code audit.**
+**Status:** target replacement for LangGraph; Python FastAPI stays.
 
-## Conversation authority
-One GPT-led conversation decides the next useful move and writes natural customer prose. Node is not a second dialogue planner. It may reject an unauthorized action, ungrounded consequential claim, privacy leak or unsupported completion claim; it must not demand a canned prompt, particular wording, fixed question key, keyword overlap or gratuitous goal confirmation.
+## Agent invocation
+Each application \`agent_id\` resolves to an approved Foundry project, named agent, pinned agent version/model, persona revision and published tool set. Python invokes that agent using its supported Responses/agent-reference API; Foundry manages natural reasoning and function selection. Preserve a single application-owned turn contract and bounded execution budget. The service cannot directly mutate PostgreSQL or execute workflows.
 
-## Provider adapter
-- A single provider-neutral ModelClient interface encapsulates request, response, structured output, function calls, timeout, cancellation, model identifier and usage metrics.
-- Azure OpenAI GPT-5.4 is the primary provider profile. OpenAI is an optional profile using the same output contract. Deployment configuration selects provider; there is no implied automatic failover.
-- Never leak provider keys to browser, Node tool results, model context or logs. Gateway readiness reports capability without secrets.
-- Set explicit overall turn budget, maximum model calls, maximum tool rounds, output budget and concurrent-call limits as deployment policies; tune with measured latency and quality rather than arbitrary retries.
-
-## Bounded LangGraph loop
-~~~mermaid
-flowchart TD
-  A["Authorized turn envelope"] --> B["Build context"]
-  B --> M["Model: understand + decide"]
-  M --> Q{"Need trusted data?"}
-  Q -->|Yes and within budget| T["Node read-tool registry"]
-  T --> X["Validate, correlate, sanitize output"]
-  X --> M
-  Q -->|No or budget reached| F["Model: compose final response"]
-  F --> O["Typed response and proposals"]
-  O --> N["Node validator + durable commit"]
-~~~
-
-State in this graph is short-lived per-request execution state; Node/PostgreSQL owns resumable memory. The graph never executes side-effectful catalog actions. Stop deterministically on deadline, cancellation, tool budget, repeated identical tool requests or exhausted retry policy. Avoid silent recursive loops.
-
-## Request envelope (conceptual)
-- Correlation: request ID, tenant-bound session ID, message ID, time budget and pinned config version identifiers.
-- Context: customer message, relevant recent turns, durable concise summary, validated known facts and corrections, unresolved topics, action status and tenant persona.
-- Capabilities: registry of allowed read-tool names and versioned parameter schemas, plus available catalog goals for this session.
-- Evidence: only authorized retrieval excerpts/provider facts, each with scope and provenance.
-- Model context must **actually contain** the durable summary; merely setting a field in a Node DTO is insufficient.
-
-## Tool registry
-- Node maintains reviewed read-tool definitions with stable IDs, descriptions, JSON Schema parameters, explicit output schemas, required permission, per-tenant allowlist, timeout, data classification and audit policy.
-- Examples: search_knowledge, list_supported_goals, get_goal_requirements, list_available_packages, get_verified_customer_facts, get_action_status, get_conversation_summary.
-- The model requests a tool by registered name and validated arguments. Node resolves its implementation; arbitrary URLs, SQL, code execution and unknown tool names are forbidden.
-- Tool responses include call ID, retrieval status, source IDs, tenant scope and revision metadata where applicable. Empty, unauthorized, stale and timeout are distinct result states.
-- A successful read tool is not proof that an external action was completed.
-
-## Candidate output (conceptual)
-~~~json
+## Model turn contract (illustrative)
+\`\`\`json
 {
-  "message": "Natural customer-facing reply",
-  "evidenceRefs": ["authorized-source-reference"],
-  "goalCandidates": [{"goalKey": "company_formation", "confidence": "high"}],
-  "factUpdates": [{"key": "requested_activity", "value": "consulting", "source": "customer_turn"}],
-  "clarificationNeeded": false,
-  "actionProposal": null
+  "requestId":"uuid",
+  "ticketId":"uuid",
+  "agentRef":"server-issued-binding",
+  "pinnedVersions":{"persona":"v1","intents":"v1","offerings":"v1","knowledge":"v1"},
+  "context":{"customerMessage":"...","recentTurns":[],"summary":"...","verifiedFacts":[],"actionStatus":[]},
+  "toolScopeRef":"short-lived-node-issued-token",
+  "limits":{"maxFunctionCalls":8,"maxRounds":3,"deadlineMs":60000}
 }
-~~~
+\`\`\`
+\`agent_id\` and trust scope come from Node, not model or browser. The model returns natural message, citations/evidence refs, intent candidates, proposed fact updates and optional non-executing action proposal. Versioned TS/Python schemas are finalized during implementation.
 
-This is a desired minimal contract, not a declaration of existing API compatibility. Define actual TypeScript and Python schemas in a separate implementation change. Validate candidate goal keys and fact types against published catalog contracts; treat model confidence as advice, not authorization. Persist only validated information and use a conservative conflict policy for corrections.
+## One model-visible tool set (per-agent allowlist)
+| Tool | Purpose |
+| --- | --- |
+| \`find_intents\` | Search published intent definitions by conversation semantics |
+| \`get_intent_requirements\` | Return applicable required/verified/missing/conditional facts and documents |
+| \`search_knowledge\` | Gateway-mediated Foundry IQ retrieval, source IDs/revisions and citations |
+| \`get_offerings\` | Approved products, services, package and pricing records |
+| \`get_ticket_context\` | Verified ticket facts, summary and pending topics |
+| \`get_document_data\` | Approved structured OCR fields from private ticket files |
+| \`preflight_operation\` | Nonexecuting prerequisites, consent and authorization check |
+| \`propose_operation\` | Submit proposal only, never direct execution |
+| \`get_operation_status\` | Verified asynchronous operation result |
 
-## Response check
-- **Conversational:** greeting, acknowledgment, clarification and natural follow-up; no citation required.
-- **Business factual:** verify each consequential claim against approved RAG/catalog/provider evidence with compatible scope, revision and entailment; citation IDs alone do not prove support.
-- **External outcome:** state completed only after authoritative verified provider state.
-- **Policy violation:** reject or safely regenerate only the invalid content. Record reason and bounded retry; do not overwrite a correct response with a rigid template.
+No redundant ANCFZ document-requirements tool, no hardcoded stage planner, no unrestricted SQL/web/Bing, no direct CRM/payment/n8n function.
+
+## Tool handoff
+Foundry requests an application function → Python checks schema, name, scope, correlation and budget → private Node dispatcher checks bound agent/account/ticket + allowlist and executes reviewed capability → Python returns result to Foundry → model continues or produces final answer. If supported native Foundry tools bypass this boundary, do not attach them to protected Agents. Ingestion and admin tool creation are not customer-visible functions.
+
+## Evidence and guardrails
+Greetings/clarifications need no citation. Agent-business facts require approved and current evidence with provenance; prices/formal quotes use authoritative offering catalog; external success requires verified provider status. Node independently rejects unsupported consequences without lexical-overlap policing. Tool errors distinguish unauthorized/empty/timeout/unavailable/stale; bounded recovery cannot weaken ACLs.
+
+## Context and privacy
+Node owns durable messages, facts and ticket revision. Redis caches current projection. Foundry conversation IDs may be used only as scoped ephemeral adapters; never be the sole durable memory. Do not send OTP, credentials, raw identity attachments or unnecessary PII. No separate LangGraph memory/planner is allowed in target.
 
 ## Observability
-Capture correlation ID, tenant-safe identifiers, model/provider version, selected read tools, latency/tokens, evidence refs, guard reasons, tool budgets, action proposals and human-quality evaluation metadata. Never log raw credentials, unmasked PII or sensitive source excerpts.
-
-## P4 candidate status (implementation, not production activation)
-
-An opt-in Python LangGraph GPT-first controller and private Node callback now use the isolated P2/P3 contracts. The private callback verifies the P3 session-token/catalog scope for every read and issues signed evidence receipts. Returned model citations must match receipts from the current turn; the Node claim verifier performs a fresh authorization/source revision read and requests independent entailment from the existing private grounding service. Raw lexical overlap is not required.
-
-The candidate still needs a real encrypted privacy-vault binding, complete claim-coverage and tenant-isolation UAT, remote CI, live Azure evaluation and P6 feature-gated API wiring. The legacy V2 controller continues handling production chat. Never treat this documentation as proof of production readiness.
-
-### P4 engineering progress matrix (candidate, updated 2026-11-12)
-
-| Workstream | Implementation | Validation | Gate |
-| --- | --- | --- | --- |
-| P4-A Protocol and Python route | Done | Python syntax compiled; real Docker test pending | Open |
-| P4-B GPT-first LangGraph | Done | 6 synthetic tool-loop tests passed with local graph substitute; real LangGraph CI pending | Open |
-| P4-C Node/Python service authentication | Done | Source reviewed; integration/API tests pending | Open |
-| P4-D Tenant-scoped private read execution | Done | P3 13/13 previously passed; P4 route integration pending | Open |
-| P4-E Signed on-turn evidence receipts | Done | Node test suite added, not executed in checkout | Open |
-| P4-F Claim provenance + independent entailment | Done (candidate) | Held-out semantic/false-rejection evaluation pending | Open |
-| P4-G Model-to-Node adapter and core assembly | Done (isolated) | Node TypeScript/lint and full unit suite pending | Open |
-| P4-H Durable scoped privacy vault | Not connected | Production gate | Blocked |
-| P4-I Real Azure GPT UAT and p95 latency | Not executed | Live evaluation required | Open |
-| P4-J Production chat cutover | Intentionally disabled | P6/P7 acceptance required | Blocked |
-
-Run `npm run typecheck`, `npm run lint`, `npm run test:unit`, `npm run build --workspaces --if-present`, plus `pytest -q services/model-gateway/tests/test_p4_graph.py` in an environment with project Python requirements installed. Docker must be configured with real provider credentials for live UAT. No result from mock tests alone authorizes production cutover.
+Correlate agent, ticket, turn, model deployment, Foundry agent version, tool IDs, budget, evidence revisions, policy decisions, retries and provider calls. Capture no raw secrets or unapproved document contents in routine logs.
