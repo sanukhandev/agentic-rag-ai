@@ -1,45 +1,33 @@
-# 04 — Tenant persona and conversation memory
+# 04 — Agent persona, accounts, ticket memory and events
 
-**Status: target behavior and data contracts.**
+**Status:** target domain only. Filename retained until a controlled docs-path cleanup; the target design contains **no Tenant** concept.
 
-## Tenant configuration
-Every tenant has independent identities, data, approved content and published configuration. The assistant's display name, language set, tone, style, brand guidance, escalation rules and knowledge/tool policies belong to a versioned tenant persona. A session pins a published persona revision and relevant catalog revision. Draft edits cannot silently affect open conversations.
+## Agent-owned configuration
+The application `agent_id` is the security partition. Agent has a public key/slug, admin role bindings, Foundry project + named agent/version, persona and policy revisions, approved knowledge base, intent/offerings catalog pins, tools and workflows. No model/browser input may create authority over another Agent. An active ticket pins the published revisions.
 
-Tenant-specific assistant examples must remain data, not hardcoded system prompts. An ANCFZ assistant is one example; customers of another tenant must never inherit its name, services, policies or prompts.
+## Identity and account access
+Guest tickets may access only approved public agent knowledge. When customer provides an email, Node performs agent-scoped lookup without disclosing existence, offers time-limited OTP challenge via server-owned UI, and verifies in HTTP. OTP never enters the model conversation. Upon verification, link a permitted existing account or ask explicit opt-in to create a new one. Guest-to-account ticket binding must be audited and ownership-checked. Same email may belong to different agent accounts.
 
-## Persona resolution
-1. Node derives the tenant from trusted channel authentication or verified routing; it never accepts model-selected tenant identity.
-2. Node checks the authenticated user's access to the selected conversation.
-3. Node loads the published, authorized persona and catalog revision (or the session's existing pins).
-4. Python receives only the permitted persona fields and model instructions in a signed, scoped turn envelope.
-5. The model answers as that assistant in the customer's selected/appropriate supported language.
-6. Node checks for identity/policy leakage without imposing scripted wording or a rigid one-question format.
+## Authoritative ticket state
+`tickets` include immutable ticket number, agent ID, owner (guest/account), inferred subject/intent, state, current revision, pinned config and open/closure timestamps. `ticket_messages` are ordered by per-ticket sequence, with original client ID, role, accepted/published status and privacy-safe content. `ticket_events` are append-only and feed SSE. Facts, summarized context, private attachments, operation history, provider refs, consent and closure confirmations are linked to ticket, not to CRM identity.
 
-## Three-layer memory
-| Layer | Contents | Authority |
+## Memory layers
+| Layer | Storage | Role |
 | --- | --- | --- |
-| Recent turns | A bounded set of actual customer and assistant messages | PostgreSQL turn ledger, reconstructed by Node |
-| Durable customer context | Validated requirements, customer corrections, goal candidates, stage/action status, consent and evidence provenance | PostgreSQL structured state |
-| Compact summary | Relevant completed conversation topics, pending question, verified decisions and unresolved ambiguity | Versioned, validated summary maintained by Node |
+| Recent ordered turns | PostgreSQL | Replayable source messages |
+| Verified facts/corrections | PostgreSQL | Typed values/provenance and conflict resolution |
+| Compact AI summary | PostgreSQL | Versioned, derived only from valid facts/messages |
+| Active context projection | Redis | Revision-tagged TTL cache for quick turns |
+| Foundry history reference | Bounded external binding | Optional model optimization, not authoritative |
+| OTP challenge and turn coordination | Redis + persistent audit | Expiring and rate-limited security controls |
 
-A summary is an optimization, not a replacement for verified facts or actual provider status. The model must receive both relevant recent history **and** the durable summary. A provider-issued receipt may establish an action outcome; the assistant's recollection cannot.
+Use a transaction to durably accept each incoming message **before acknowledgment** and deduplicate by (agent, ticket, client_message_id). Async summary/transcript projections have their own idempotent workers; they cannot overwrite newer revisions. Per-ticket lease or optimistic revision prevents parallel turns from producing conflicting replies.
 
-## Suggested records
-- Tenant, user or anonymous principal, session, conversation, owner and access controls.
-- Ordered turns with client message ID, assistant response, timestamps, provenance and response guard result.
-- Persona/catalog revision pins, model profile and last authorized context revision.
-- Facts: typed key, value or encrypted reference, confidence class, origin, observed turn, timestamp and superseded status.
-- Goals: candidate key, supporting evidence, ambiguity state and associated requirements; not implicit workflow authorization.
-- Actions: proposed, awaiting_authorization, queued, executing, verified_completed, failed or reconciliation_required.
-- Summaries: text plus creation timestamp, context version and source turn range, with prompt-injection-resistant formatting.
-- Consent: action purpose, lawful basis where applicable, scope, actor, timestamp, version and revocation policy.
+## Ticket state machine
+`open → in_progress ↔ waiting_for_customer ↔ waiting_for_operation → resolved → closed`. The customer must explicitly request closure. A farewell, disconnect or model judgment is not sufficient. Mark closure requested and hold if provider result is still unknown. Reopen only according to published agent policy and verified ownership.
 
-## Continuation and correction
-- Authenticated cross-session resume requires explicit ownership/ACL checks; a guessed session ID cannot retrieve another user's history.
-- Anonymous-to-authenticated session attachment requires identity proof, an audited binding and no cross-tenant reassignment.
-- Later customer corrections supersede old assertions; preserve their audit trail and do not regress to stale summary values.
-- If a summary conflicts with verified structured facts, verified facts win and the summary is regenerated or repaired.
-- Summaries must not carry external document instructions forward as authoritative system policy.
+## Server Sent Events
+Node exposes authorized ticket event stream, with event ID, ticket sequence/revision and types: ticket.created, ticket.subject.updated, message.accepted, agent.response.completed, auth.challenge.required, auth.session.verified, document.processing.completed, ticket.summary.updated, operation.queued/completed/failed, ticket.closed. HTTP sends user commands. SSE resumes from Last-Event-ID using PostgreSQL ledger. Redis stream/pubsub provides ephemeral fan-out; it is not the replay authority.
 
-## Storage, privacy and lifecycle
-Encrypt sensitive fields and backups; mask application logs, model/tool traces and support views. Apply tenant-configurable retention and deletion policies subject to legal requirements. Use Redis only for expiring cache/coordination; loss of Redis must not erase conversation state. Protect against concurrent replies with optimistic version checks or serialized turn processing. Do not persist model scratch reasoning or undisclosed raw thought traces.
+## Privacy
+Do not keep raw OTP, credentials, unrestricted customer documents or full private identity fields in the model context or Redis metrics. Encrypt permitted sensitive fields, mask logs, configure retention and require ticket ACL on every replay. Never store undisclosed chain-of-thought scratchpad as customer transcript.
