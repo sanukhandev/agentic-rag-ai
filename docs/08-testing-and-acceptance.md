@@ -1,58 +1,34 @@
-# 08 — Testing and acceptance criteria
+# 08 — Testing and release acceptance gates
 
-**Status: proposed gates. No result is considered passed until executed against the target branch and environment.**
+**Status:** proposed tests; no Foundry Agent or plain-PostgreSQL results are claimed.
 
-## Evaluation strategy
-Quality must be measured on real provider outputs as well as deterministic unit/integration tests. Synthetic scenario completion and transport health are not evidence that the assistant sounds natural, remembers customers or answers correctly.
+## Core test layers
+| Layer | Mandatory evidence |
+| --- | --- |
+| Repository cleanup | One Node entrypoint and one Python Foundry agent adapter; no LangGraph/pgvector/tenant-domain imports on active path |
+| Database | Fresh ordinary PostgreSQL image + migrations, integrity/unique/FK/RLS, OTP, ticket event sequencing and outbox transactional tests |
+| Agent isolation | Cross-agent account, ticket, tool, knowledge source, cache, docs, n8n callback and audit denial |
+| Gateway/tool contracts | Foundry agent binding, typed function arguments/results, deadlines, cancellation, per-Agent budget and repeated-call guards |
+| Knowledge | Approval/dedupe, index readiness, source revoke, false citation, absent evidence, low-quality/contradictory claims |
+| Intent + offerings | Natural phrases, ambiguous/multi-intent changes, generic requirements, pricing revision/quote eligibility |
+| Identity + tickets | Guest greeting creates ticket, secure OTP/opt-in account, persistence after restart, explicit closure, in-flight workflow reconciliation |
+| OCR | Multi-page PDF/DOCX/image extraction, malformed input, PII and source-linked field review |
+| SSE | Auth on connect/reconnect, Last-Event-ID replay, ordered event sequence, Redis loss, duplicate browser subscriptions |
+| n8n execution | Approve lead/quote, provider callback authentication, idempotency, unknown result, reconciliation, no false completion |
+| UI | Customer ticket header, async statuses, OTP form, documents, admin Agent/Knowledge/Intents/Offerings/Workflow/Tickets |
+| Operations | Compose service health, clean volumes, no pgvector extension, no deleted script references, build/test exact commit |
+| Real AI | Actual Azure Foundry Agent + Foundry IQ conversations; human rubric, response quality, citation accuracy, p95 and cost |
 
-Keep a frozen baseline of representative conversations from the currently deployed system before changing orchestration. Re-run the same cases against the new path, with equivalent tenant persona/catalog, RAG sources and model profile. Record actual configuration, code commit, model deployment, prompt revision and tool results for each run.
+## Core conversation scenarios
+Greeting-only; FAQ answer; company formation without forced funnel; ambiguous intent; pricing and offering comparison; missing requirements; customer corrections; switching topic; email/OTP and account linking; uploaded document field extraction; approved lead through n8n; quote generation; pending/failed provider; final closure request; resumed ticket; injection and cross-agent isolation.
 
-## Test layers
-| Layer | Mandatory scenarios | Evidence |
-| --- | --- | --- |
-| Typed contracts and tools | Unknown tools, invalid arguments, permission failure, retries and tool budget | Unit tests and contract fixtures |
-| Tenant isolation | Tenant A cannot read B's summary, persona, goals, vectors, provider status or cached result | Negative integration tests |
-| Conversation memory | Long context, corrections, interrupted session, auth resume, summary conflict | Multi-turn assertions |
-| RAG grounding | Supported answer, related-but-insufficient snippet, revoked source, missing knowledge, injection | Per-claim evidence review |
-| Intent discovery | Natural phrasings, ambiguity, multiple goals, goal change, knowledge-only visitor | Human-reviewed transcripts |
-| Action authorization | Consent, missing prerequisites, duplicates, retries, forged callbacks, provider failure | Database and outbox assertions |
-| Persona and language | Name/tone adherence, language switch, concise natural responses | Human rubric and traces |
-| Performance | p50/p95 turn latency, token and tool use, queue pressure, timeouts, circuit trips | Load and operational reports |
-| Resilience | Azure unavailable, Redis reset, stale cache, partial provider completion | Recovery drills and reconciliation |
-| Regression | API/websocket compatibility, current customer/admin UI, DB migration and rollback | CI, smoke, browser E2E |
+## Quality gates
+- Zero observed cross-agent access, unauthorized actions, fabricated verified outcomes and exposed secrets in adversarial tests.
+- Accepted messages and state survive Redis restart; no duplicate customer commands or double provider dispatch after retries.
+- Every consequential factual claim has current attributable evidence; measure false rejection separately from hallucination.
+- A provisional human-acceptance target of at least 90% of representative live Foundry turns, subject to establishing baseline and sample size; no claim this has already passed.
+- Measure p50/p95/p99 model and tool latencies, per-turn cost, failure rate, source readiness/revocation latency and resource consumption.
+- Real provider + browser E2E and clean deployment pass before calling the rebuilt POC integrated.
 
-## Conversation-quality rubric
-Score each representative turn for:
-1. **Answer relevance:** addresses what the customer asked, rather than reflexively selling or requesting contact.
-2. **Grounded accuracy:** tenant-specific facts follow authorized evidence and clearly communicate uncertainty.
-3. **Context and memory:** does not re-ask answered questions or lose corrected facts.
-4. **Naturalness and persona:** varied, clear, appropriately concise response without repetitive canned phrasing.
-5. **Intent appropriateness:** sensible goal recognition, clarification only when useful, correct choice not to trigger an action.
-6. **Workflow truthfulness:** status only moves with verified evidence; pending/failure is presented accurately.
-
-A generic fallback is not automatically a valid answer; repeat rate, empty answer rate and unnecessary refusal rate must be reported independently. Requiring a citation for non-factual pleasantries is a scoring defect.
-
-## Initial release targets (to be approved during baseline)
-- **Zero** cross-tenant leakage, unauthorized action dispatch, fabricated verified outcomes and security-critical PII disclosure.
-- **Zero** unexpected writes to protected RAG documents/vectors during conversation-only evaluation.
-- Every action-callback state transition is supported by correlated provider evidence and survives duplicate/replay scenarios.
-- Human-reviewed answer relevance and naturalness improve against the frozen baseline. A suggested provisional target is at least **90%** acceptable turns across a representative real-model set, with no regression in grounding and security.
-- Demonstrate correct conversation resumption, intent changes and customer corrections on long multi-turn scenarios.
-- Prove rollback without losing or corrupting durable conversation or workflow state.
-
-The 90% figure is a **proposed release threshold**, not an achieved or previously certified score. Set sample-size, confidence intervals, scenario balance and adjudication protocol before claiming success.
-
-## Quality test execution
-1. Freeze a balanced scenario suite: greetings, advisory-only, implicit goal, ambiguous goal, qualification, price/package, contact consent, documents, payment/status, multilingual turns, interruptions, corrections and adversarial cross-tenant probes.
-2. Record baseline using real Azure GPT-5.4 and actual authorized knowledge; label model/provider failures separately from response defects.
-3. Run the same suite on candidate; capture normalized transcripts, source/claim decisions, tool calls, action outcomes, latency and token costs.
-4. Manually review failures and repeated fallback patterns. A synthetic 'passed' boolean is not a substitute for the rubric.
-5. Execute deterministic security, integration and load tests; approve only after all hard gates pass.
-6. Canary by tenant, monitor key metrics and retain a documented rollback procedure.
-
-## Reporting
-Publish commit SHA, environment, provider profile, test commands, scenario count, failures by reason, percent acceptable, confidence estimate, tool budget, p95 latency and unresolved limitations. Do not claim complete customer journeys based on mocked provider responses.
-
-## P7 local Azure conversation suite
-
-The P7 implementation is at [10-p7-azure-uat.md](10-p7-azure-uat.md). Run `npm run p7:validate` and `npm run p7:dry-run` without credentials; the opt-in local Azure suite is `npm run p7:azure` and requires two synthetic canary tenants, an approved Beta-only sentinel and PostgreSQL read-only fingerprints. A green HTTP run is **not** a quality verdict. Independent reviews and an equivalent V2 read-only baseline remain mandatory before release approval.
+## Validation commands
+Update current npm/Python/Docker scripts after deleting obsolete paths; use exact-head CI that runs TypeScript typecheck/lint/tests/build, Python gateway/OCR tests, fresh SQL migration tests, `docker compose config`, security negatives, browser E2E, and opt-in real Foundry/n8n integration. Historical P2–P7 mock runs do not qualify as new-architecture certification.
