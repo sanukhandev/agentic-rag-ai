@@ -62,7 +62,15 @@ try {
     assert.ok(fk.rows.some(r => r.conname === name), 'Missing cross-tenant FK: '+name);
   }
 
-  const client = await pool.connect();
+  const runtimePool = new pg.Pool({
+    host: process.env.PGHOST, port: Number(process.env.PGPORT ?? 5432),
+    user: 'agentic_app', password: process.env.APP_DB_PASSWORD,
+    database: process.env.PGDATABASE, connectionTimeoutMillis: 10000,
+  });
+  const role = await pool.query("SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname='agentic_app'");
+  assert.equal(role.rows[0].rolsuper, false, 'Runtime role must not be superuser');
+  assert.equal(role.rows[0].rolbypassrls, false, 'Runtime role must not bypass RLS');
+  const client = await runtimePool.connect();
   try {
     await client.query('BEGIN');
     const a = randomUUID(), b = randomUUID(), connection = randomUUID(), actionId = randomUUID(), session = randomUUID();
@@ -124,6 +132,7 @@ try {
     throw error;
   } finally {
     client.release();
+    await runtimePool.end();
   }
   console.log('Fresh migration, admin bootstrap, tenant isolation and integration schema checks passed.');
 } catch (error) {
