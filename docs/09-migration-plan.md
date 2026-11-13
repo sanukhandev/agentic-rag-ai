@@ -1,47 +1,58 @@
-# Clean architecture migration and rollout
+# 09 — Clean POC agent-centric rebuild and parallel implementation plan
 
-The customer-facing conversation implementation is the single Node `services/api/src/index.ts` composition root and `services/api/src/conversation-core/**`. It delegates bounded GPT/LangGraph read-only tool turns to the private Python `/internal/conversation/turn`. A separate model judgment and independent Node receipt/revocation checks enforce evidence-backed claims. Node owns tenant/session identity, private RAG access, verified facts, explicit action authorization and authoritative persistence.
+**Plan status:** repository audit/target documentation; the running application is not refactored by this page. Baseline audited: `refactor/clean-architecture-rebuild` at `b22c8f1` (526 tracked files). POC changes may break old APIs/data schemas intentionally; do not claim an in-place production upgrade.
 
-## Completed code retirement
+## Audit summary
+- `services/api/src/index.ts` currently composes `conversation-core/**`, tenant-scoped PostgresStore, embedding/RAG tools, grounding and WebSocket `chat-stream`. `public-app.ts` exposes tenant-slug chat endpoints and tenant administration. No canonical ticket/SSE/OTP-account customer path is implemented.
+- `services/model-gateway/gateway/app.py` invokes `p4_graph.py` LangGraph with `p4_contracts.py`, old provider/OpenAI configuration and two grounding adapters. `requirements.txt` pins `langgraph`. Rewrite as one Foundry Agent Service/Responses binding plus mediated Node function calls.
+- `services/api/src/store-postgres.ts` (~161 KB), `store-memory.ts` (~87 KB), `types.ts` (~42 KB) and `intent-catalog.ts` (~49 KB) couple tenant/CRM/RAG/lifecycle concerns. Replace with bounded repositories and typed agent/ticket/catalog/action contracts; no wrapper over obsolete store.
+- `apps/web/app/page.tsx` (~78 KB) and `chat-stream-client.ts` use tenant chat and WebSockets. Rebuild into agent-scoped ticket UI with HTTP message commands, SSE reconnect/replay, OTP, upload and action statuses.
+- Angular admin is tenant- and CRM-oriented (tenant service, org table, CRM dashboard, old intent editor, knowledge manager). Keep Angular design primitives, replace domain services/screens with Agent, Persona, Knowledge, Intents/Requirements, Offerings, Tools/Workflows and Tickets.
+- `tools/ingestion/ingestion/pipeline.py` chunks knowledge for pgvector; `worker.py` mixes knowledge indexing, catalog parsing and OCR; `document_ocr.py` has reusable PDF/image extraction and Tesseract. Split Foundry IQ ingestion from private ticket OCR; optionally use Azure Document Intelligence.
+- `services/api/src/event-bus.ts` and event relay/worker contain reusable durable-outbox concepts but tenant/CRM route contracts. Rewrite generic `agent_id` / ticket action event contracts; reuse idempotency and reconciliation design, not retired paths.
+- `infra/n8n/workflows/**` includes old ANCFZ seven-stage, CRM polling and mock-finance workflows. Retain reviewed lead/quote logic as examples; replace with two generic Agent-workflow templates and independently verified callbacks; archive or delete dead workflow imports.
+- `docker-compose.yml` uses `pgvector/pgvector:pg16`; `docker-compose.local.yml` also uses pgvector for P2 test. `001-schema.sql` creates vector extension/column and `042` adds 1536-vector HNSW. Do **not** merely swap Docker image.
+- `infra/postgres` has numbered schema 001–077 and an excluded duplicate `072-publish-v13-catalog.sql`; these include legacy tenants, embeddings, CRM lifecycle, V2 versions and old callback contracts. Start a concise checked new POC baseline on disposable DB; archive original history outside active migration directory after documenting data retention.
+- `package.json` contains scripts pointing to missing `scripts/verify-n8n-salesforce-lead-runtime.mjs`, `scripts/verify-secrets.mjs`, `scripts/verify-local.mjs` and others. Prune or replace scripts and CI references after verifying required callsites.
 
-- Deleted the old Express `app.ts` coordinator, deterministic conversation planner, V2 turn controller, workflow-bridge entrypoints, duplicate provider controllers and stale model contracts.
-- Removed the Python V2 agent/graph/contract stack and its obsolete endpoints. No alternate V2 conversation engine remains registered.
-- Rewired shared catalog, workflow-routing, provider-correlation, memory and PostgreSQL store contracts into the canonical core.
-- Removed the P6 preview transport, V2 feature flags, abandoned V2 n8n draft templates and obsolete canary test scripts.
-- Renamed the ingestion catalog workbook parser to a generic published-business-catalog parser.
+## Clean replacement rule
+For each file or module: **KEEP unchanged** if behavior/contracts fit, **REWRITE complete module** when concept changes, **DELETE** only after confirming it is no longer imported/referenced. No old API aliases, dual active model paths, tenant-to-agent compatibility layer or second RAG search. Keep secrets, historical data/evidence and uploaded files out of automatic cleanup.
 
-## Required database transition
+## Recommended foundation order
+**P0: Freeze cross-service contracts** — agent IDs/version pins, ticket/message/event sequence, function envelopes, intent/offerings/action schemas, OCR extraction, auth and provider callback signature. Land docs plus contract fixtures first.
 
-Migrations `infra/postgres/075-business-catalog-storage.sql` and `076-normalized-integrations-and-indexes.sql` renames retained business catalog/OTP tables and catalog-reference columns in place, updates persisted catalog-source values and rewrites only unpublished outbox stream names. It does not drop or truncate records. Run the forward-only migration once using the repository's verified migration runner before launching the new build; verify schema and outbox consistency separately. Retain historical migrations 001–074 for reproducible upgrades and audit history. This does not authorize resetting RAG embeddings, vectors, source versions, existing tenant data, or other customer records.
+**P1: New database baseline** — ordinary PostgreSQL 16. Candidate ordered migrations: 001_agents_identity, 002_agent_configs_catalogs, 003_accounts_otp, 004_tickets_messages_events, 005_knowledge_documents, 006_actions_integrations_outbox, 007_rls_indexes. Use agent-scoped composite keys/FKs/RLS, partial operational indexes and immutable published JSON catalog snapshots. Run clean install twice, static constraints and real database tests. Existing RAG/legacy data not rewritten in place.
 
-## Release gates not yet certified
+**P2: Node app core** — replace monolithic Store, tenant routes, chat composition and conversation-core adapters with one `AgentResolver`, `TicketService`, `ContextService`, `ToolRegistry`, `ActionAuthority` and typed repositories. Durable message intake and ticket number before invoking Foundry.
 
-- Exercise a real PostgreSQL upgrade and clean install, then verify all table/constraint names and query contracts under multi-tenant isolation.
-- Validate the private Node/Python request path in Docker Compose with real Azure/OpenAI model and embeddings, including negative security tests and multi-turn natural language quality.
-- Wire and independently verify customer-approved business actions, notifications, lead/account/document/payment/contract provider callbacks and idempotent outbox reconciliation; a model suggestion must never be equated with completed execution.
-- Replace remaining legacy administrative / event execution infrastructure with approved new-core action interfaces. Do not enable unsupported old workflow endpoints or misrepresent successful business actions.
-- Confirm CI on the exact commit and perform a deployment smoke test. Unit-only CI is not production/UAT acceptance.
+**P3: Python Foundry gateway** — one `FoundryAgentClient`, `FunctionDispatcher`, `GatewayContracts`, bounded tool-call lifecycle and independent grounding service; remove `p4_graph`, `p4_contracts`, LangGraph dependencies and obsolete mock adapters once tests pass.
 
-## Rollback and data policy
+**P4: Foundry IQ + OCR** — new `KnowledgePublisher` handles approved per-agent indexing/revisions, `KnowledgeRetriever` returns extractive citations, independent `TicketDocumentProcessor` handles private OCR/extraction, source-linked structured fields and AI summaries. Remove embedding/chunk search from Node and old ingestion pipeline.
 
-Use a branch/deployment rollback for application code only. Because the storage migration is forward-only, a pre-migration database backup and tested restoration procedure are required before any environment-level rollback. Do not perform automatic destructive migration or modify protected RAG knowledge.
+**P5: Generic catalogs and execution** — implement semantic `find_intents`, `get_intent_requirements`, `get_offerings`, proposal/preflight and policy authorization. One transactional action + outbox → worker → n8n → callback route for lead and quote; every transition updates ticket event.
 
-## Clean build schema lifecycle and admin-only bootstrap
+**P6: Auth/events/UI** — agent-scoped customer accounts, secure OTP and opt-in registration, SSE replay and ticket header, customer UI, admin Agent/Catalog/Knowledge/Tickets screens. Use shared contract fixtures from P0 and DB schema from P1.
 
-`schema-migrate` executes the transaction-locked, SHA-256 checked, forward-only SQL runner before the API starts. PostgreSQL no longer automatically executes all historical SQL files through `/docker-entrypoint-initdb.d`. Migration 072's historical catalog **content publication** is excluded from schema migrations because it duplicates a schema version and is optional product data, not DDL. Historical migrations 001–075 remain retained. The runner refuses to operate on an existing populated schema without a verified ledger: use a backed-up, audited manual baseline instead of guessing.
+**P7: Docker/scripts/cleanup** — switch Postgres images, simplify environment and runtime services, rebuild OCR worker, consolidate worker roles only if operationally safe, remove obsolete mock payment/PDF profiles, unused migrations/scripts/test artifacts and legacy endpoints after import graph goes green.
 
-`076` adds normalized provider connections, remote identities, dispatch attempts and webhook inbox records. These contain only bounded references; provider credentials and raw webhook bodies must remain in the secret manager and authorized private storage. Foreign keys constrain tenant ownership; `FORCE ROW LEVEL SECURITY` requires every future integration adapter to use `SET LOCAL app.tenant_id = '<validated tenant UUID>'` inside its transaction. New cross-tenant constraints on older business rows are `NOT VALID` pending a clean data audit, but reject inconsistent new writes.
+**P8: Integration/certification** — exact-head typecheck/lint/unit/build, SQL fresh migration/DB tests, Node↔Python contracts, real Foundry IQ agent/RAG, OCR, OTP, SSE replay, duplicate webhook/n8n lead/quote and browser E2E. No dual-run cutover; a fully fresh POC deployment is acceptable after evidence.
 
-Only the explicitly configured administrator is bootstrapped: `admin@techcarrot.ae`, role `platform_admin`, no tenant. No migration provisions another user, and no password or hash is checked into Git. After setting `ADMIN_BOOTSTRAP_PASSWORD` in your shell/secret store (not committed .env), run:
+## Parallel workstreams after P0
+| Stream | Owns | Depends on |
+| --- | --- | --- |
+| A — PostgreSQL/domain repositories | `infra/postgres/**`, new typed repositories, migration runner tests | P0 contracts |
+| B — Foundry gateway | `services/model-gateway/**`, Foundry SDK and tool-call contracts | P0 contracts + mocked Node executor |
+| C — Knowledge/OCR | `tools/ingestion/**` replacement, Foundry IQ adapter, private OCR | P0 contracts; DB storage integration later |
+| D — Customer UI | `apps/web/**`, HTTP/SSE/OTP/ticket components | P0 API mocks |
+| E — Angular Admin | `apps/admin/**`, Agent management and catalogs | P0 API mocks |
+| F — n8n workflows | `infra/n8n/workflows/**`, generic lead/quote callback fixtures | P0 action contracts |
+| Integrator — Node application | `services/api/src/**`, single composition root, auth, tools, events and integration | A–F contracts, merge sequentially |
+| Finalizer — Docker/CI/deletions | Compose/Dockerfile/`.env.example`/scripts/tests/docs | P1–P6 imported successfully |
 
-```sh
-docker compose --profile bootstrap run --rm admin-bootstrap
-```
+Use isolated branches/worktrees and **exclusive file ownership**. Avoid running parallel workers against the same monolithic store or Compose. Integrate A+B+C first into one backend, then F, then D+E; use targeted contract suites per merge.
 
-The bootstrap is idempotent and refuses an unexpected existing role. Password changes are opt-in with `node scripts/bootstrap-admin.mjs --rotate` in a private shell or disposable migration container. Active authentication sessions are revoked on rotation. Do not deploy the shared initial password unchanged to public production; rotate after first access and enable MFA when available.
+## Minimal Compose target
+Long-running: `postgres` (ordinary Postgres), `redis`, `n8n`, `model-gateway`, `api`, `worker`, `ocr-worker` (if independent), `web`, `admin`, `nginx`. One-shot: `schema-migrate`, optional `admin-bootstrap`. Retire `event-relay` only when its outbox responsibilities have a tested owner in `worker`; retire quote-pdf and mock-payments only after n8n quote path no longer depends on them. Do not install vector extension or ship embedding credentials. Preserve OCR functionality, not necessarily old OCR container layout.
 
-The migration/schema CI job validates fresh DDL, identity keys, scoped foreign keys, unique indexes, RLS, bootstrap idempotency, and retry identity. It does not prove production data conformity or provider throughput; run `EXPLAIN (ANALYZE, BUFFERS)` against representative tenant cardinalities before tuning work_mem or index count.
-
-### Strict runtime database isolation
-
-The migration service connects as the cluster owner `agentic`, then creates/updates the separate non-superuser, non-BYPASSRLS `agentic_app` role. Running API and event services, and the admin bootstrap job, use `agentic_app` exclusively with a distinct 24+ character URL-safe `APP_DB_PASSWORD`. Never reuse the migration-owner database password for runtime credentials. Integration tables enforce tenant-bound access with `FORCE ROW LEVEL SECURITY`, and a transaction must set the authoritative `app.tenant_id` before reading/writing these tables. The application runtime role currently has general application-table CRUD privileges (required by existing monolith operations); progressively narrow this to per-service roles as integration APIs are implemented.
+## Validation and POC data handling
+Fresh disposable POC PostgreSQL volume is permitted after explicit archive/backup decision. Old schema files are not applied in the new baseline, and no historical ledger checksum is falsified. Keep existing RAG DOCX files outside the new SQL chain for re-ingestion into Foundry IQ after approval. Test rollback by recreating a clean volume and restoring any intentionally retained POC data. Make no "production-ready" claims without real Foundry/n8n and fault-injection evidence.
