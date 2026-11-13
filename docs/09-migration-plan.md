@@ -1,70 +1,27 @@
-# 09 — Non-destructive implementation and rollout plan
+# Clean architecture migration and rollout
 
-**Status: implementation plan only. This documentation commit must change no application runtime or protected data.**
+The customer-facing conversation implementation is the single Node `services/api/src/index.ts` composition root and `services/api/src/conversation-core/**`. It delegates bounded GPT/LangGraph read-only tool turns to the private Python `/internal/conversation/turn`. A separate model judgment and independent Node receipt/revocation checks enforce evidence-backed claims. Node owns tenant/session identity, private RAG access, verified facts, explicit action authorization and authoritative persistence.
 
-## Scope and guiding decision
-Rebuild the conversation **control plane** for a generic multitenant product. Reuse stable infrastructure wherever possible. Replace complex competing dialogue rules, model envelope assembly, tool registry/adapters and the bounded LangGraph loop only after verifying the relevant current code and behavior. Avoid a wholesale rewrite of PostgreSQL, RAG ingestion, frontend, outbox and n8n.
+## Completed code retirement
 
-Do not promote existing file names, schema numbers or historical designs into active product policy. Preserve compatibility until migration gates pass.
+- Deleted the old Express `app.ts` coordinator, deterministic conversation planner, V2 turn controller, workflow-bridge entrypoints, duplicate provider controllers and stale model contracts.
+- Removed the Python V2 agent/graph/contract stack and its obsolete endpoints. No alternate V2 conversation engine remains registered.
+- Rewired shared catalog, workflow-routing, provider-correlation, memory and PostgreSQL store contracts into the canonical core.
+- Removed the P6 preview transport, V2 feature flags, abandoned V2 n8n draft templates and obsolete canary test scripts.
+- Renamed the ingestion catalog workbook parser to a generic published-business-catalog parser.
 
-## Phase 0 — Inventory and frozen baseline
-- Capture current main commit, live provider config (without secrets), public routes, existing tests, schema/tenant boundaries, source counts and protected RAG checksums.
-- Map the Node conversation entrypoint, Python model gateway and LangGraph graph; identify duplicate response composition, scripted overrides and misleading guard failures.
-- Map existing persona/catalog/read-tool/action/public API contracts, session state, outbox, n8n provider callbacks and UI consumption.
-- Record a human-rated Azure GPT-5.4 conversation baseline with knowledge-only, implicit-intent and long-memory scenarios.
-- Deliver a reviewed keep/adapt/retire table and safe database compatibility map. **No destructive migration.**
+## Required database transition
 
-## Phase 1 — Contracts and protections
-- Freeze typed TurnEnvelope, ToolDefinition, ToolResult, CandidateResponse, VerifiedFact, ConversationProjection, ActionProposal and ProviderEvidence contracts.
-- Implement tenant boundary, service authentication, schema validation, audit and PII rules before relaxing conversation constraints.
-- Pin tenant persona/catalog versions; define imported JSON/YAML validation/publish contracts and tenant workflow graph validation.
-- Introduce independent feature flags and observability for the candidate path, preserving the running path.
+Migration `infra/postgres/075-business-catalog-storage.sql` renames retained business catalog/OTP tables and catalog-reference columns in place, updates persisted catalog-source values and rewrites only unpublished outbox stream names. It does not drop or truncate records. Run the forward-only migration once using the repository's verified migration runner before launching the new build; verify schema and outbox consistency separately. Retain historical migrations 001–074 for reproducible upgrades and audit history. This does not authorize resetting RAG embeddings, vectors, source versions, existing tenant data, or other customer records.
 
-## Phase 2 — Authoritative context and tool registry
-- Rebuild the Node context adapter to load recent turns, durable summary, verified facts, pinned persona/catalog and live action status.
-- Ensure Python actually receives and uses that summary. Persist corrections and support authenticated continuation.
-- Implement a Node-owned, schema-validated and tenant-authorized read-tool registry with call IDs, deadlines, status semantics and source provenance.
-- Protect existing RAG tables and embedding settings. No catalog or vector re-seeding.
+## Release gates not yet certified
 
-## Phase 3 — Model adapter and LangGraph loop
-- Define one provider-neutral model adapter: Azure GPT-5.4 primary, OpenAI selectable by configuration.
-- Build a minimal bounded LangGraph flow: context -> reasoning -> optional trusted reads -> natural composition -> typed candidate output.
-- Remove competing planner authority, redundant lexical gating and hardcoded customer prompts from the candidate conversation path.
-- Keep a narrow Node response validator for evidence, identity, PII and external-outcome truth. Do not disable existing action gates.
+- Exercise a real PostgreSQL upgrade and clean install, then verify all table/constraint names and query contracts under multi-tenant isolation.
+- Validate the private Node/Python request path in Docker Compose with real Azure/OpenAI model and embeddings, including negative security tests and multi-turn natural language quality.
+- Wire and independently verify customer-approved business actions, notifications, lead/account/document/payment/contract provider callbacks and idempotent outbox reconciliation; a model suggestion must never be equated with completed execution.
+- Replace remaining legacy administrative / event execution infrastructure with approved new-core action interfaces. Do not enable unsupported old workflow endpoints or misrepresent successful business actions.
+- Confirm CI on the exact commit and perform a deployment smoke test. Unit-only CI is not production/UAT acceptance.
 
-## Phase 4 — Configurable intents and actions
-- Implement or adapt the versioned Admin authoring/publishing APIs and JSON/YAML import/export.
-- Resolve goal candidates semantically from published tenant descriptions/examples and prior context, without routine goal-confirmation prompts.
-- Separate normal fact/requirement collection from authorization of actual actions.
-- Adapt business actions to tenant-defined prerequisite graphs and private n8n bindings. Preserve outbox and verified provider callbacks.
-- Configure the ANCFZ seven-stage journey **only as tenant data**; test with a second structurally different tenant.
+## Rollback and data policy
 
-## Phase 5 — Validation and controlled cutover
-- Execute full deterministic test suite and the real-provider human-quality matrix in docs/08-testing-and-acceptance.md.
-- Verify zero cross-tenant access, ungrounded high-impact claims, unauthorized dispatch and protected-RAG modifications.
-- Run simultaneous candidate/current paths on controlled tenants as feasible, with no double-execution of external actions.
-- Canary the candidate turn controller behind tenant-level feature flags; compare quality, latency, costs and provider status.
-- Only retire obsolete conversation code once the new path passes acceptance and rollback tests. Remove unused logic separately from data/schema cleanup.
-
-## Commit and PR policy
-1. **Documentation rebuild PR:** readme.md, AGENTS.md and docs/** only. No runtime writes, DB migration, workflow edits or data changes.
-2. **Architecture contracts PR:** isolated types, tests and compatibility adapters.
-3. **Memory and read tools PR:** durable context and authorized registry, with security tests.
-4. **Model and LangGraph PR:** single dialogue composer with strict tool budgets and provider configurations.
-5. **Intent/workflow PR:** tenant-admin catalog and deterministic action graph integration.
-6. **Validation/cutover PR:** controlled feature rollout after independent gates; retain rollback.
-
-This sequence may be split into smaller safe changes. Do not merge stages merely because build and mock tests pass.
-
-## Explicit preservation list
-Never reset or rewrite existing PostgreSQL volumes/tables, pgvector embeddings, original RAG sources, published tenant records, migration history, user sessions, customer files, audit records, secrets, event outbox or external provider state during this makeover. Any later data transformation requires separate authorization, backup, forward-compatible migration and verified rollback.
-
-## P6 candidate-only integration (not the final cutover)
-
-A new canary API and independent Next.js preview transport are isolated behind three gates: `P6_CANDIDATE_ENABLED=true`, `P6_CANARY_TENANT_IDS` and build-time `NEXT_PUBLIC_P6_PREVIEW_ENABLED=true`. Startup also requires the private read gateway, P4/P5 model flags, a separate enforced P6 claim verifier and session-scoped AES-GCM vault credentials.
-
-**Do not turn on these flags on production tenants.** The new core persists candidate turns but does not currently populate V2 `user_intent_documents` or drive seven-stage action state for fresh conversations. It must not claim to have created/updated Salesforce, generated an invoice or completed a business workflow. P7 acceptance requires an explicit consent and action-authority integration, real Azure UAT, full P6 local tests, tenant-isolation/rollback verification and a side-by-side quality/latency assessment.
-
-## P7 acceptance harness (initiated)
-
-A frozen 30-conversation/64-turn suite, loopback-only Azure canary runner, independent six-dimensional quality rubric, security probes, and pre/post tenant RAG/action-table fingerprints are implemented under `scripts/p7-*` and documented in `docs/10-p7-azure-uat.md`. These files implement validation only; they do not enable any production flag, authorize external actions, mutate protected knowledge, or claim a real-provider pass. Candidate conversation acceptance and production lifecycle cutover remain separately gated.
+Use a branch/deployment rollback for application code only. Because the storage migration is forward-only, a pre-migration database backup and tested restoration procedure are required before any environment-level rollback. Do not perform automatic destructive migration or modify protected RAG knowledge.
