@@ -94,3 +94,13 @@ jobs:
           PGPASSWORD: ci-disposable-app-role-database-secret
       - name: Verify normalized schema, indexes, tenant boundaries and password hash
         run: node scripts/verify-db-integrity.mjs
+      - name: Build clean migration container image
+        run: docker build --target migration-runtime -t agentic-migration-ci .
+      - name: Verify containerized migration replay and role provisioning
+        run: |
+          docker run --rm --network host \
+            -e PGHOST=127.0.0.1 -e PGPORT=5432 -e PGDATABASE=agentic_rag \
+            -e PGUSER=agentic -e PGPASSWORD=ci-disposable-postgres-secret \
+            -e APP_DB_PASSWORD=ci-disposable-app-role-database-secret \
+            agentic-migration-ci \
+            sh -c "node scripts/migrate-vm.mjs && node scripts/provision-app-role.mjs"
