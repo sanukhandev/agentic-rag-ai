@@ -37,7 +37,6 @@ dbSuite('P2 disposable PostgreSQL integration', () => {
     }
     pool = new Pool({ connectionString: url!, max: 3 });
     await pool.query('SELECT 1 FROM chat_sessions LIMIT 0'); // schema preflight
-    await pool.query('SELECT 1 FROM user_intent_documents LIMIT 0');
     await pool.query('SELECT 1 FROM intent_catalog_v2_versions LIMIT 0');
     await pool.query(`INSERT INTO tenants (id, name, slug, status) VALUES ($1, $2, $3, 'active')`,
       [tenantId, 'P2 isolated test tenant', `p2-${tenantId.slice(0, 8)}`]);

@@ -1,4 +1,11 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { validateCatalogV2, catalogV2VersionRef } from '../../conversation/catalog.js';
+const fixture = JSON.parse(readFileSync(new URL('../../fixtures/ancfz-catalog-v2-seven-stage.json', import.meta.url), 'utf8')) as unknown;
+const parsed = validateCatalogV2(fixture);
+if (!parsed.ok || !parsed.document) throw new Error('Missing reference catalog');
+const reference = parsed.document;
+const ref = catalogV2VersionRef(reference);
 import type { Store } from '../../types.js';
 import type { SessionSnapshot, TrustedActor } from '../contracts.js';
 import type { SqlClient, SqlPool } from '../adapters/postgres-repository.js';
@@ -12,23 +19,14 @@ const snapshot: SessionSnapshot = {
   tenantId: actor.tenantId, sessionId: actor.sessionId, ownerPrincipalId: actor.principalId,
   personaVersionId: 'persona', catalogVersionId: 'catalog',
   revision: 5, personaInstructions: '', conversationSummary: '', recentTurns: [],
-  verifiedFacts: [], publishedGoalKeys: ['create_company'], pendingActionStatus: [],
+  verifiedFacts: [], publishedGoalKeys: ['anc.company_formation'], pendingActionStatus: [],
 };
 function setup(grant: Record<string, unknown> | null, sessionRevision = 5) {
   let queries = 0;
   const session = { id: actor.sessionId, tenantId: actor.tenantId, stateVersion: sessionRevision, closedAt: null };
   const catalog = {
     id: 'catalog', tenantId: actor.tenantId, status: 'published',
-    catalogVersionRef: 'hash', catalog: { sheets: {
-      BusinessGoals: [{ businessGoalKey: 'create_company', active: true }],
-      BusinessStages: [{ businessGoalKey: 'create_company', stageKey: 'lead_generation', active: true }],
-      ToolBindings: [{
-        goalKey: 'create_company', stageKey: 'lead_generation', toolKey: 'lead.create',
-        enabled: true, sideEffectClass: 'write', consent: 'purpose_specific',
-        confirmation: 'explicit_customer', registryKey: 'lead-provider',
-      }],
-      RequirementPolicies: [],
-    }},
+    catalogVersionRef: ref, catalog: reference,
   };
   const store = {
     async getTenant() { return { status: 'active' }; },
@@ -48,8 +46,8 @@ function setup(grant: Record<string, unknown> | null, sessionRevision = 5) {
 }
 const standard = {
   tenant_id: actor.tenantId, session_id: actor.sessionId,
-  catalog_version_ref: 'hash', goal_key: 'create_company', stage_key: 'lead_generation',
-  action_key: 'lead.create', session_revision: 5, consent_scope: 'hash:lead.create',
+  catalog_version_ref: ref, goal_key: 'anc.company_formation', stage_key: 'lead_generation',
+  action_key: 'lead.create', session_revision: 5, consent_scope: ref + ':lead.create',
   granted_by_principal_hash: actor.principalId,
   goal_confirmed_at: '2026-01-01', purpose_consented_at: '2026-01-01',
   customer_authorized_at: '2026-01-01',

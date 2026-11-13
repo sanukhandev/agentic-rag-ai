@@ -18,148 +18,106 @@ export interface PersonaRow {
   speaking_style: string;
   permitted_languages: string[];
 }
-export interface CatalogRow {
-  id: string;
-  catalog_json: unknown;
-}
-export interface IntentDocumentRow {
-  summary: string;
-  verified_facts: unknown;
-  revision: number;
-}
-export interface MessageRow {
-  role: string;
-  masked_content: string;
-}
-export interface ActionRow {
-  id: string;
-  workflow_key: string;
-  state: string;
-}
+export interface CatalogRow { id: string; catalog_json: unknown; }
+export interface MessageRow { role: string; masked_content: string; }
+export interface ActionRow { id: string; workflow_key: string; state: string; }
 
-function record(input: unknown): Record<string, unknown> {
-  return input !== null && typeof input === 'object' && !Array.isArray(input)
+function object(input: unknown): Record<string, unknown> {
+  return input && typeof input === 'object' && !Array.isArray(input)
     ? input as Record<string, unknown> : {};
 }
-
-function safeString(value: unknown, limit = 6_000): string {
-  return typeof value === 'string' ? value.slice(0, limit) : '';
+function text(value: unknown, size = 6000): string {
+  return typeof value === 'string' ? value.slice(0, size) : '';
 }
 
 export interface CoreMemory {
   readonly catalogVersionId?: string;
-  /** Provisional model suggestions only; never goal confirmation or action approval. */
   readonly provisionalGoalKeys?: readonly string[];
   readonly verifiedFacts?: readonly VerifiedFact[];
   readonly summary?: string;
   readonly summaryRevision?: number;
 }
 
-export function extractCoreMemory(conversationState: unknown): CoreMemory {
-  const raw = record(record(conversationState).conversationCore);
-  const values = Array.isArray(raw.verifiedFacts) ? raw.verifiedFacts : [];
-  const verifiedFacts = values.filter((candidate): candidate is VerifiedFact => {
-    const fact = record(candidate);
-    return typeof fact.key === 'string' && fact.key.length > 0 && fact.key.length <= 100
-      && typeof fact.value === 'string' && fact.value.length <= 4_000
-      && ['customer', 'catalog', 'node', 'provider'].includes(String(fact.source))
-      && typeof fact.sourceReference === 'string'
-      && Number.isSafeInteger(fact.revision) && Number(fact.revision) >= 0;
-  });
-  const provisionalGoalKeys = Array.isArray(raw.provisionalGoalKeys)
-    ? raw.provisionalGoalKeys.filter((key): key is string =>
-      typeof key === 'string' && /^[a-z][a-z0-9._-]{1,79}$/u.test(key)).slice(0, 8)
-    : [];
+/** The only owner of model-facing conversation memory is conversationCore. */
+export function extractCoreMemory(state: unknown): CoreMemory {
+  const raw = object(object(state).conversationCore);
+  const verifiedFacts = (Array.isArray(raw.verifiedFacts) ? raw.verifiedFacts : [])
+    .filter((candidate): candidate is VerifiedFact => {
+      const value = object(candidate);
+      return typeof value.key === 'string' && value.key.length > 0 && value.key.length <= 100
+        && typeof value.value === 'string' && value.value.length <= 4000
+        && ['customer','catalog','node','provider'].includes(String(value.source))
+        && typeof value.sourceReference === 'string'
+        && Number.isSafeInteger(value.revision) && Number(value.revision) >= 0;
+    });
+  const provisionalGoalKeys = (Array.isArray(raw.provisionalGoalKeys) ? raw.provisionalGoalKeys : [])
+    .filter((key): key is string => typeof key === 'string' && /^[a-z][a-z0-9._-]{1,79}$/u.test(key)).slice(0, 8);
   return {
     ...(typeof raw.catalogVersionId === 'string' ? { catalogVersionId: raw.catalogVersionId } : {}),
     provisionalGoalKeys,
     verifiedFacts,
-    ...(typeof raw.summary === 'string' ? { summary: raw.summary } : {}),
+    ...(typeof raw.summary === 'string' ? { summary: raw.summary.slice(0, 6000) } : {}),
     ...(Number.isSafeInteger(raw.summaryRevision) ? { summaryRevision: Number(raw.summaryRevision) } : {}),
   };
 }
-
-function documentFacts(raw: unknown, revision: number): VerifiedFact[] {
-  return Object.entries(record(raw)).flatMap(([key, item]) => {
-    const value = record(item);
-    const masked = value.maskedValue;
-    if (!key || key.length > 100 || typeof masked !== 'string' || masked.length > 4_000) return [];
-    const source = value.source === 'visitor' ? 'customer' : value.source;
-    if (source !== 'customer' && source !== 'catalog' && source !== 'node' && source !== 'provider') return [];
-    return [{ key, value: masked, source, sourceReference: `intent-document:${revision}:${key}`, revision }];
-  });
-}
-
-function goalKeys(raw: unknown): string[] {
-  const goals = record(record(raw).sheets).BusinessGoals;
+function activeGoalKeys(catalogJson: unknown): string[] {
+  const goals = object(object(catalogJson).sheets).BusinessGoals;
   if (!Array.isArray(goals)) return [];
-  return [...new Set(goals.flatMap(item => {
-    const candidate = record(item);
-    const goalKey = candidate.businessGoalKey;
-    return candidate.active === true && typeof goalKey === 'string' && /^[a-z][a-z0-9._-]{1,79}$/u.test(goalKey)
-      ? [goalKey] : [];
+  return [...new Set(goals.flatMap((row) => {
+    const goal = object(row), key = goal.businessGoalKey;
+    return goal.active && typeof key === 'string' && /^[a-z][a-z0-9._-]{1,79}$/u.test(key) ? [key] : [];
   }))].slice(0, 100);
 }
-
-/** Pure projection. Never promotes assistant text to a verified customer fact. */
 export function buildSessionSnapshot(input: {
   session: SessionRow;
   principalId: string;
   persona: PersonaRow;
   catalog: CatalogRow | null;
-  intentDocument: IntentDocumentRow | null;
   messagesNewestFirst: readonly MessageRow[];
   actionsNewestFirst: readonly ActionRow[];
   messageLimit?: number;
 }): SessionSnapshot {
-  const { session, principalId, persona, catalog, intentDocument } = input;
+  const { session, principalId, persona, catalog } = input;
   if (!Number.isSafeInteger(session.state_version) || session.state_version < 0) {
-    throw new Error('Invalid persistent session revision');
+    throw new Error('Invalid session revision');
   }
-  const state = record(session.conversation_state);
-  const core = extractCoreMemory(session.conversation_state);
-  const facts = new Map<string, VerifiedFact>();
-  for (const value of documentFacts(intentDocument?.verified_facts, intentDocument?.revision ?? 0)) facts.set(value.key, value);
-  for (const value of core.verifiedFacts ?? []) facts.set(value.key, value);
-  const summary = safeString(core.summary || intentDocument?.summary || state.rollingSummary || '');
-  const recentTurns: HistoryTurn[] = [...input.messagesNewestFirst]
-    .slice(0, input.messageLimit ?? 16).reverse()
-    .flatMap(msg => (msg.role === 'user' || msg.role === 'assistant') && typeof msg.masked_content === 'string'
-      ? [{ role: msg.role === 'user' ? 'customer' as const : 'assistant' as const, text: msg.masked_content.slice(0, 4_000) }]
-      : []);
-  const pendingActionStatus = input.actionsNewestFirst.slice(0, 32).map(action => {
-    const state = action.state.toLowerCase();
-    // A completed status in action_requests alone does not establish verified
-    // provider execution. P5 must provide a separate trustworthy readback.
-    const status: SessionSnapshot['pendingActionStatus'][number]['status'] =
-      state === 'proposed' || state === 'pending' ? 'proposed'
-        : state === 'awaiting_confirmation' || state === 'awaiting_authorization' ? 'awaiting_authorization'
-          : state === 'approved' || state === 'queued' ? 'queued'
-            : state === 'processing' || state === 'executing' ? 'executing'
-              : state === 'failed' || state === 'rejected' ? 'failed' : 'reconciliation_required';
-    return { actionId: action.id, actionKey: action.workflow_key, status };
-  });
+  const memory = extractCoreMemory(session.conversation_state);
+  const goalKeys = activeGoalKeys(catalog?.catalog_json);
+  const recentTurns: HistoryTurn[] = [...input.messagesNewestFirst].slice(0, input.messageLimit ?? 16)
+    .reverse().flatMap(row => (row.role === 'user' || row.role === 'assistant')
+      && typeof row.masked_content === 'string'
+      ? [{ role: row.role === 'user' ? 'customer' as const : 'assistant' as const,
+        text: row.masked_content.slice(0,4000) }] : []);
   return {
-    tenantId: session.tenant_id,
-    sessionId: session.id,
-    ownerPrincipalId: principalId, // Derived only AFTER session-token verification.
+    tenantId: session.tenant_id, sessionId: session.id, ownerPrincipalId: principalId,
     revision: session.state_version,
     personaVersionId: persona.id,
-    catalogVersionId: core.catalogVersionId || catalog?.id || 'unconfigured',
+    catalogVersionId: memory.catalogVersionId ?? catalog?.id ?? 'unconfigured',
     personaInstructions: [
-      `Name: ${safeString(persona.name, 100)}`,
-      `Greeting: ${safeString(persona.greeting, 500)}`,
-      `Personality: ${safeString(persona.personality, 1000)}`,
-      `Tone: ${safeString(persona.tone, 500)}`,
-      `Speaking style: ${safeString(persona.speaking_style, 500)}`,
-      `Permitted languages: ${(persona.permitted_languages || ['en']).join(', ').slice(0, 100)}`,
+      `Name: ${text(persona.name,100)}`,
+      `Greeting: ${text(persona.greeting,500)}`,
+      `Personality: ${text(persona.personality,1000)}`,
+      `Tone: ${text(persona.tone,500)}`,
+      `Speaking style: ${text(persona.speaking_style,500)}`,
+      `Permitted languages: ${(persona.permitted_languages || ['en']).join(', ').slice(0,100)}`,
     ].join('\n'),
-    conversationSummary: summary,
+    conversationSummary: memory.summary ?? '',
     recentTurns,
-    verifiedFacts: [...facts.values()],
-    publishedGoalKeys: goalKeys(catalog?.catalog_json),
-    provisionalGoalKeys: (core.provisionalGoalKeys ?? []).filter(key =>
-      goalKeys(catalog?.catalog_json).includes(key)),
-    pendingActionStatus,
+    verifiedFacts: memory.verifiedFacts ?? [],
+    publishedGoalKeys: goalKeys,
+    provisionalGoalKeys: (memory.provisionalGoalKeys ?? []).filter(key => goalKeys.includes(key)),
+    pendingActionStatus: input.actionsNewestFirst.slice(0,32).map(action => {
+      const state = action.state.toLowerCase();
+      const status: SessionSnapshot['pendingActionStatus'][number]['status'] =
+        state === 'proposed' || state === 'pending' ? 'proposed'
+          : state === 'awaiting_confirmation' || state === 'awaiting_authorization' ? 'awaiting_authorization'
+            : state === 'approved' || state === 'queued' ? 'queued'
+              : state === 'processing' || state === 'executing' ? 'executing'
+                : state === 'failed' || state === 'rejected' ? 'failed'
+                  : 'reconciliation_required';
+      // A provider-completed action must carry independent correlated readback;
+      // action_requests status alone cannot certify external success.
+      return { actionId: action.id, actionKey: action.workflow_key, status };
+    }),
   };
 }

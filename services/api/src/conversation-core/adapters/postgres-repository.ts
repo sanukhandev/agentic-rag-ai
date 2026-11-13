@@ -4,7 +4,7 @@ import type {
 } from '../contracts.js';
 import {
   buildSessionSnapshot, extractCoreMemory,
-  type ActionRow, type CatalogRow, type IntentDocumentRow, type MessageRow, type PersonaRow, type SessionRow,
+  type ActionRow, type CatalogRow, type MessageRow, type PersonaRow, type SessionRow,
 } from './context-builder.js';
 import { SessionPermissionError, type AuthorizedSession, type SessionAuthorizer } from './session-authorizer.js';
 
@@ -141,10 +141,6 @@ export class PostgresConversationRepository implements ConversationRepository {
       `, [actor.tenantId, pinnedCatalog]);
       // A pinned version must never silently shift to another tenant/version.
       if (pinnedCatalog && !catalogRow) throw new ConversationPersistenceError('MISSING_CONFIG', 'Pinned catalog is unavailable');
-      const document = await single(client, `
-        SELECT summary, verified_facts, revision FROM user_intent_documents
-         WHERE tenant_id = $1 AND session_id = $2 LIMIT 1
-      `, [actor.tenantId, actor.sessionId]);
       const messages = await client.query(`
         SELECT role, masked_content FROM chat_messages
          WHERE tenant_id = $1 AND session_id = $2
@@ -164,7 +160,6 @@ export class PostgresConversationRepository implements ConversationRepository {
       const result = buildSessionSnapshot({
         session, principalId: actor.principalId, persona,
         catalog: catalogRow as unknown as CatalogRow | null ?? null,
-        intentDocument: document as unknown as IntentDocumentRow | null ?? null,
         messagesNewestFirst: messages.rows as unknown as MessageRow[],
         actionsNewestFirst: actions.rows as unknown as ActionRow[],
       });
