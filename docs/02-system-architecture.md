@@ -1,66 +1,49 @@
-# 02 — System architecture
+# 02 — Agent-centric system architecture
 
-**Status: target component boundaries. Existing integrations must be verified before cutover.**
+**Status:** target deployment, not current runtime.
 
-## High-level data flow
-
-~~~mermaid
+## Logical flow
+\`\`\`mermaid
 flowchart TD
-  C["Customer / channel"] --> N["Node Express API"]
-  N --> AUTH["Tenant identity, session, policy"]
-  N --> PG[("PostgreSQL: durable state")]
-  N --> GW["Private Python FastAPI model gateway"]
-  GW --> LG["Bounded LangGraph turn loop"]
-  LG <--> MODEL["Azure GPT-5.4 / optional OpenAI"]
-  LG --> TOOL["Signed Node read-tool gateway"]
-  TOOL --> RAG["Authorized tenant RAG / pgvector"]
-  TOOL --> CAT["Persona, catalog, facts, provider status"]
-  GW --> N
-  N --> CHECK["Scoped evidence and action checks"]
-  CHECK --> C
-  CHECK --> GATE["Authorized action gate"]
-  GATE --> OUT[("Transactional PostgreSQL outbox")]
-  OUT --> REDIS["Redis Streams / workers"]
-  REDIS --> WF["Private n8n workflows"]
-  WF --> EXT["External service / CRM / finance"]
-  EXT --> VERIFY["Authenticated evidence reconciliation"]
-  VERIFY --> PG
-~~~
+  UI["Customer Next.js: chat/ticket/OTP/upload"] --> N["Node API: agent scope, auth, tickets, SSE"]
+  N <--> PG[("PostgreSQL: authoritative state + outbox")]
+  N <--> R[("Redis: cache, OTP challenge, coordination, events")]
+  N --> PY["Private Python FastAPI Model Gateway"]
+  PY <--> F["Version-pinned Microsoft Foundry Agent Service"]
+  F -->|"function request"| PY
+  PY -->|"service-authenticated request"| T["Node agent-scoped Tool Registry"]
+  T --> K["Foundry IQ / Azure AI Search"]
+  T --> C["Intents, offerings, verified ticket facts/status"]
+  T --> PY
+  PY --> N
+  N --> V["Node claim/proposal/privacy validation"]
+  V --> PG
+  PG -->|"durable event"| R
+  R -->|"Node SSE"| UI
+  N -->|"authorized action"| O["PostgreSQL action + transactional outbox"]
+  O --> W["Worker + n8n"]
+  W --> X["External provider"]
+  X -->|"verified callback/reconciliation via Node"| PG
+\`\`\`
 
-All customer-facing model requests pass through Node. Python and LangGraph are internal. A customer never selects an arbitrary tool URL, tenant scope, workflow identifier or model system instruction.
+## Single ownership
+- Foundry agent: natural reasoning, intent identification and function selection; not business authority.
+- Python gateway: invoke Foundry, normalize turn, apply budgets, mediate ALL agent-called application functions. No LangGraph in target and no access to provider credentials other than its own approved Foundry identity.
+- Node: trusted agent resolution, session/OTP/account ownership, tool ACL, request durability, response grounding, action consent, workflow policy and ticket closure.
+- Foundry IQ: only approved agent-scoped business knowledge via gateway-mediated \`search_knowledge\`. No public-web knowledge sources.
+- PostgreSQL: durable business/ticket/memory truth; Redis: cache and delivery; n8n: approved workflow transport. External providers never write DB directly.
+- OCR: customer ticket attachments handled separately from published RAG, with source-linked structured facts and human confirmation as needed.
 
-## Ownership matrix
-| Concern | Authoritative owner | Constraint |
-| --- | --- | --- |
-| Customer message and dialogue strategy | GPT via Python gateway | No privileged writes or invented facts |
-| Identity, tenant, permissions, session | Node | Do not trust browser/model assertions |
-| Read-tool registry and execution | Node | Static reviewed capability classes + per-tenant allowlists |
-| Model-call sequencing | Python LangGraph | Bounded per turn, ephemeral in-process state |
-| Persona and catalog source | Published tenant configuration in PostgreSQL | Session pins immutable revisions |
-| Memory and verified customer facts | PostgreSQL managed by Node | Model may propose updates, never directly commit them |
-| RAG documents and vectors | Existing tenant-controlled knowledge store | Preserve current sources and embeddings |
-| Claim and citation validation | Node | Claim-oriented, not lexical phrasing tests |
-| Side-effect policy and transaction | Node | Consent, prerequisites, replay protection, outbox |
-| Execution | n8n / external providers | Success requires independent provider evidence |
-| Event cache/transport | Redis | Not source of truth |
+## One customer message
+1. Node derives agent ID from trusted route/config; verifies ticket access; atomically accepts message and appends event using client-message idempotency.
+2. Load pinned agent/persona/catalog/knowledge versions, facts, recent turns, durable summary and action status; rehydrate Redis cache by revision.
+3. Python invokes Foundry; function calls are checked/forwarded to Node. Node executes authorized reads/preflight and returns bounded, provenance-aware outputs.
+4. Foundry composes natural response; Node independently checks critical claims, candidate facts and action proposal; commit answer + ticket event; publish SSE.
+5. Customer-approved side effect goes through separate Node action authorization, transactional outbox, worker/n8n and provider reconciliation; every state change appends ticket event.
+6. Explicit customer request (not idle/farewell) closes ticket after reconciling in-flight operations.
 
-## One authoritative turn
-1. Node authenticates or creates a correctly scoped anonymous session; checks message idempotency and rate limits.
-2. Node reads the pinned persona/catalog, verified facts, compact summary, recent turn history and outstanding action status from durable state.
-3. Node sends a minimal scoped envelope to the private Python gateway. Internal service authentication binds request and tenant scope.
-4. LangGraph invokes GPT, optionally requests bounded, permitted Node read tools, then emits one structured candidate answer and proposals.
-5. Node verifies referenced evidence, fact provenance, action eligibility and response safety. The model's natural response is retained whenever valid.
-6. Node transactionally persists turn result, validated fact changes, updated summary/workflow proposal and audit record. Return the response to the customer.
-7. If an action was separately authorized, Node commits it with an idempotency key to the outbox. Workers run it; independently authenticated provider evidence updates the authoritative business state.
+## Reliability
+PostgreSQL event IDs/sequences enable SSE \`Last-Event-ID\` replay; Redis loss must not lose accepted messages. Per-ticket concurrency uses session lease/queue or optimistic revision with deterministic retry. Unknown provider status is not success. No direct Python/Foundry knowledge or actions bypass Node. Screens and admin do not call internal gateway routes.
 
-## Fault behavior
-- No authorized evidence for a consequential business claim: ask for clarification, indicate the gap or abstain. Do not fabricate an excerpt.
-- Model unavailable: provide a short tenant-approved availability response, avoid side effects, log an incident-safe trace.
-- Read tool timeout: preserve partial authorized evidence, apply bounded retry/backoff and state the limitation.
-- Duplicate customer message/action: return its persisted outcome; do not dispatch it again.
-- Provider acknowledged but not verified: remain pending or reconciliation-required, never mark success.
-- Lost Redis message: replay from the durable outbox; never infer workflow completion from Redis delivery.
-- Interrupted conversation: restore from Node/PostgreSQL. In-process LangGraph state is not the durable memory store.
-
-## Deployment
-Reuse the current Next.js customer UI, Angular Admin, Node/Express API, Python/FastAPI gateway, ingestion/OCR services, PostgreSQL/pgvector, Redis, n8n and reverse proxy where viable. Changing framework or database technology is not a prerequisite for conversational quality. Confirm production TLS, private network boundaries and current Compose configuration before release.
+## Target containers
+Ordinary PostgreSQL 16 (no pgvector), Redis, Node API, Python model gateway, Next.js web, Angular admin, n8n, Nginx, worker (outbox/reconciliation) and OCR worker if OCR runs asynchronously. One-shot schema and opt-in admin bootstrap. Remove only obsolete mock PDF/payment and embedding resources after dependency removal.
