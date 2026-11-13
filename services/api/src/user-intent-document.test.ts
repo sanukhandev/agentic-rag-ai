@@ -7,7 +7,7 @@ import type { ActionRequest, UserIntentDocument, IntentTurnAssessment } from './
 
 const hash = 'a'.repeat(64);
 const documentFor = (tenantId: string, sessionId: string): UserIntentDocument => ({
-  id: randomUUID(), tenantId, sessionId, opportunityId: null, catalogSource: 'v2', catalogVersionRef: `ancfz:r1:${hash}`, personaVersionId: null,
+  id: randomUUID(), tenantId, sessionId, opportunityId: null, catalogSource: 'published', catalogVersionRef: `ancfz:r1:${hash}`, personaVersionId: null,
   businessGoalKey: 'anc.company_formation', turnIntentKey: 'goal.company_formation', currentStageKey: 'lead_generation', stageRevision: 0, goalConfirmed: false,
   verifiedFacts: { business_activity: { maskedValue: 'technology services', source: 'visitor', messageSequence: 1, evidenceRefs: ['turn:1'], corrected: false } },
   pendingRequirementKey: 'business_activity', lastQuestion: 'What will your business do?', approvedResponse: { answer: 'I can help with the next step.', grounded: false, citationRefs: [], pendingRequirementKey: 'business_activity' },

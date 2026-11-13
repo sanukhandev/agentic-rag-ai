@@ -286,9 +286,9 @@ export const createLegacyCatalogMigrationCandidate = (input: unknown): LegacyCat
     status: 'review_required',
     autoPublish: false,
     warnings: [
-      'Legacy input was not interpreted as an executable v2 catalog.',
+      'Legacy input was not interpreted as an executable published catalog.',
       'A reviewer must map goals, stages, requirements, tools, workflows, evidence and persona references.',
-      'Prior consent, actions and publication status are never carried into a v2 candidate.',
+      'Prior consent, actions and publication status are never carried into a published catalog candidate.',
     ],
   };
 };

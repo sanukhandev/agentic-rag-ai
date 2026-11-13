@@ -7,7 +7,7 @@ export type IngestionJobStatus = 'queued' | 'processing' | 'completed' | 'failed
 export type SupportingDocumentStatus = 'uploaded' | 'queued' | 'processing' | 'completed' | 'failed' | 'reconciliation';
 export type DocumentJobStatus = 'queued' | 'processing' | 'completed' | 'failed' | 'reconciliation';
 
-export type EventStream = 'rag:v2:crm' | 'rag:v2:documents' | 'rag:v2:actions' | 'rag:v2:notifications' | 'rag:v2:ingestion' | 'rag:v2:dead-letter';
+export type EventStream = 'rag:workflow:crm' | 'rag:workflow:documents' | 'rag:workflow:actions' | 'rag:workflow:notifications' | 'rag:workflow:ingestion' | 'rag:workflow:dead-letter';
 export type DomainEventType =
   | 'crm.contact.upsert.requested.v1'
   | 'crm.summary.update.requested.v1'
@@ -873,7 +873,7 @@ export interface UserIntentDocument {
   tenantId: string;
   sessionId: string;
   opportunityId: string | null;
-  catalogSource: 'legacy_v1' | 'v2';
+  catalogSource: 'legacy_v1' | 'published';
   catalogVersionRef: string;
   personaVersionId: string | null;
   businessGoalKey: string | null;
@@ -970,7 +970,7 @@ export interface Store {
   getUserIntentDocument(tenantId: string, sessionId: string): Promise<UserIntentDocument | null>;
   updateUserIntentDocument(input: { document: UserIntentDocument; expectedRevision: number }): Promise<UserIntentDocument | null>;
   appendIntentTurn(assessment: IntentTurnAssessment): Promise<IntentTurnAssessment>;
-  /** Commit a V2 turn across session, document, assessment and decision audit. */
+  /** Commit an authorized catalog turn across session, document, assessment and decision audit. */
   commitIntentTurn(input: { session: Session; document: UserIntentDocument; expectedDocumentRevision: number | null; assessment: IntentTurnAssessment; audit?: AuditEvent | null; assistantMessage?: Message; customerMessage?: Message; actionApproval?: ActionRequest }): Promise<{ session: Session; document: UserIntentDocument }>;
   listIntentTurns(tenantId: string, sessionId: string, limit?: number): Promise<IntentTurnAssessment[]>;
   createPersonaVersion(input: Omit<PersonaVersion, 'id' | 'version' | 'createdAt' | 'publishedAt'>): Promise<PersonaVersion>;

@@ -18,7 +18,7 @@ export class MemoryStore implements Store {
   private readonly users = new Map<string, User>();
   private readonly domains = new Map<string, TenantDomain>();
   private readonly authSessions = new Map<string, AuthSession>();
-  private readonly v2OtpChallenges = new Map<string, OtpChallengeRecord>();
+  private readonly otpChallenges = new Map<string, OtpChallengeRecord>();
   private readonly callbackNonces = new Map<string, string>();
   private readonly channelCredentials = new Map<string, ChannelCredential>();
   private readonly personas = new Map<string, Persona>();
@@ -105,9 +105,9 @@ export class MemoryStore implements Store {
 
   async getUserByEmail(email: string): Promise<User | null> { return [...this.users.values()].find((user) => user.email === email.toLowerCase()) ?? null; }
   async getUser(id: string): Promise<User | null> { return this.users.get(id) ?? null; }
-  async createOtpChallenge(challenge: OtpChallengeRecord): Promise<OtpChallengeRecord> { if (this.v2OtpChallenges.has(challenge.challengeId)) throw new HttpError(409, 'V2_OTP_CHALLENGE_EXISTS', 'The OTP challenge already exists.'); this.v2OtpChallenges.set(challenge.challengeId, structuredClone(challenge)); return structuredClone(challenge); }
-  async getOtpChallenge(tenantId: string, challengeId: string): Promise<OtpChallengeRecord | null> { const challenge = this.v2OtpChallenges.get(challengeId); return challenge?.tenantId === tenantId ? structuredClone(challenge) : null; }
-  async updateOtpChallenge(challenge: OtpChallengeRecord): Promise<OtpChallengeRecord> { const current = this.v2OtpChallenges.get(challenge.challengeId); if (!current || current.tenantId !== challenge.tenantId) throw new HttpError(404, 'V2_OTP_CHALLENGE_NOT_FOUND', 'The OTP challenge was not found.'); this.v2OtpChallenges.set(challenge.challengeId, structuredClone(challenge)); return structuredClone(challenge); }
+  async createOtpChallenge(challenge: OtpChallengeRecord): Promise<OtpChallengeRecord> { if (this.otpChallenges.has(challenge.challengeId)) throw new HttpError(409, 'CATALOG_OTP_CHALLENGE_EXISTS', 'The OTP challenge already exists.'); this.otpChallenges.set(challenge.challengeId, structuredClone(challenge)); return structuredClone(challenge); }
+  async getOtpChallenge(tenantId: string, challengeId: string): Promise<OtpChallengeRecord | null> { const challenge = this.otpChallenges.get(challengeId); return challenge?.tenantId === tenantId ? structuredClone(challenge) : null; }
+  async updateOtpChallenge(challenge: OtpChallengeRecord): Promise<OtpChallengeRecord> { const current = this.otpChallenges.get(challenge.challengeId); if (!current || current.tenantId !== challenge.tenantId) throw new HttpError(404, 'CATALOG_OTP_CHALLENGE_NOT_FOUND', 'The OTP challenge was not found.'); this.otpChallenges.set(challenge.challengeId, structuredClone(challenge)); return structuredClone(challenge); }
   async createAuthSession(session: AuthSession): Promise<AuthSession> { this.authSessions.set(session.tokenHash, session); return session; }
   async getAuthSession(tokenHash: string): Promise<AuthSession | null> { return this.authSessions.get(tokenHash) ?? null; }
   async revokeAuthSession(tokenHash: string): Promise<void> { const session = this.authSessions.get(tokenHash); if (session) this.authSessions.set(tokenHash, { ...session, revokedAt: now() }); }
@@ -211,7 +211,7 @@ export class MemoryStore implements Store {
     const published = (this.businessCatalogVersions.get(document.tenantId) ?? []).find(v => v.status === 'published');
     if (!previousSession || previousSession.tenantId !== document.tenantId
       || previousSession.stateVersion !== session.stateVersion || session.tenantId !== document.tenantId
-      || document.sessionId !== session.id || document.catalogSource !== 'v2'
+      || document.sessionId !== session.id || document.catalogSource !== 'published'
       || !published || published.catalogVersionRef !== document.catalogVersionRef
       || assessment.tenantId !== document.tenantId || assessment.sessionId !== session.id
       || assessment.documentId !== document.id || assessment.opportunityId !== document.opportunityId
@@ -225,12 +225,12 @@ export class MemoryStore implements Store {
         || !['awaiting_confirmation', 'unknown', 'approved', 'processing', 'completed'].includes(currentAction.state)))
       || [...this.intentTurns.values()].some(turn => (turn.sessionId === session.id && turn.clientMessageId === assessment.clientMessageId)
         || (turn.documentId === document.id && turn.turnSequence === assessment.turnSequence))) {
-      throw new HttpError(409, 'V2_INTENT_ATOMIC_CONFLICT', 'The confirmation state changed or a message was replayed.');
+      throw new HttpError(409, 'CATALOG_INTENT_ATOMIC_CONFLICT', 'The confirmation state changed or a message was replayed.');
     }
     // Preserve a replayable model answer in the same synchronous commit as
     // the confirmed goal. Validate all message invariants before any mutation.
     if (Boolean(input.assistantMessage) !== Boolean(input.customerMessage)) {
-      throw new HttpError(409, 'V2_TURN_MESSAGE_PAIR_REQUIRED', 'Both conversation messages must be committed together.');
+      throw new HttpError(409, 'CATALOG_TURN_MESSAGE_PAIR_REQUIRED', 'Both conversation messages must be committed together.');
     }
     if (input.assistantMessage && input.customerMessage) {
       const assistant = input.assistantMessage, customer = input.customerMessage;
@@ -242,7 +242,7 @@ export class MemoryStore implements Store {
         || assistant.role !== 'assistant' || assistant.tenantId !== document.tenantId
         || assistant.sessionId !== session.id || assistant.clientMessageId !== null
         || this.messages.has(assistant.id)) {
-        throw new HttpError(409, 'V2_TURN_MESSAGE_CONFLICT', 'A reply was already committed or the message scope changed.');
+        throw new HttpError(409, 'CATALOG_TURN_MESSAGE_CONFLICT', 'A reply was already committed or the message scope changed.');
       }
     }
     const savedSession = structuredClone({ ...session, stateVersion: (session.stateVersion ?? 0) + 1 });
@@ -545,9 +545,9 @@ export class MemoryStore implements Store {
       if (!['approved', 'processing'].includes(action.state) || (input.workflowKey && action.workflowKey !== input.workflowKey)) throw new HttpError(409, 'WORKFLOW_CLAIM_MISMATCH', 'The webhook claim does not match the active workflow action.');
       const version = action.catalogVersionId ? this.intentCatalogVersions.get(action.tenantId)?.find((item) => item.id === action.catalogVersionId) : null;
       const binding = version?.catalog.workflowBindings.find((item) => item.workflowKey === action.workflowKey);
-      const v2Version = action.catalogVersionId ? this.businessCatalogVersions.get(action.tenantId)?.find((item) => item.status === 'published' && item.catalogVersionRef === action.catalogVersionId) : null;
-      const v2Route = v2Version ? resolveWorkflowRoute(v2Version, action.workflowKey) : null;
-      const claimable = binding ? binding.active && isWorkflowClaimableBinding(binding) && binding.n8nWorkflowId === input.n8nWorkflowId : Boolean(v2Route?.n8nWorkflowId === input.n8nWorkflowId);
+      const catalogVersion = action.catalogVersionId ? this.businessCatalogVersions.get(action.tenantId)?.find((item) => item.status === 'published' && item.catalogVersionRef === action.catalogVersionId) : null;
+      const catalogRoute = catalogVersion ? resolveWorkflowRoute(catalogVersion, action.workflowKey) : null;
+      const claimable = binding ? binding.active && isWorkflowClaimableBinding(binding) && binding.n8nWorkflowId === input.n8nWorkflowId : Boolean(catalogRoute?.n8nWorkflowId === input.n8nWorkflowId);
       if (!claimable) throw new HttpError(409, 'WORKFLOW_CLAIM_MISMATCH', 'The webhook claim does not match the published workflow binding.');
       const execution = [...this.actionExecutions.values()].find((item) => item.actionId === action.id && item.tenantId === action.tenantId && item.idempotencyKey === action.idempotencyKey);
       if (!execution || execution.eventId !== input.eventId || execution.correlationId !== input.correlationId || execution.attempt !== input.attempt || ['completed', 'failed', 'reconcile_required'].includes(execution.providerStatus)) throw new HttpError(409, 'WORKFLOW_CLAIM_MISMATCH', 'The webhook claim does not match the durable workflow execution.');
@@ -568,10 +568,10 @@ export class MemoryStore implements Store {
         if (!action.catalogVersionId || [...this.actionExecutions.values()].some((execution) => execution.actionId === action.id && execution.tenantId === action.tenantId)) return false;
         const version = this.intentCatalogVersions.get(action.tenantId)?.find((item) => item.id === action.catalogVersionId);
         const binding = version?.catalog.workflowBindings.find((item) => item.workflowKey === action.workflowKey);
-        const v2Version = this.businessCatalogVersions.get(action.tenantId)?.find((item) => item.status === 'published' && item.catalogVersionRef === action.catalogVersionId);
-        const v2Route = v2Version ? resolveWorkflowRoute(v2Version, action.workflowKey) : null;
+        const catalogVersion = this.businessCatalogVersions.get(action.tenantId)?.find((item) => item.status === 'published' && item.catalogVersionRef === action.catalogVersionId);
+        const catalogRoute = catalogVersion ? resolveWorkflowRoute(catalogVersion, action.workflowKey) : null;
         return Boolean(binding?.active && isWorkflowClaimableBinding(binding) && binding.n8nWorkflowId === input.n8nWorkflowId)
-          || Boolean(v2Route?.n8nWorkflowId === input.n8nWorkflowId);
+          || Boolean(catalogRoute?.n8nWorkflowId === input.n8nWorkflowId);
       })
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id))
       .slice(0, input.limit);
@@ -603,10 +603,10 @@ export class MemoryStore implements Store {
         if (!action.catalogVersionId) return false;
         const version = this.intentCatalogVersions.get(action.tenantId)?.find((item) => item.id === action.catalogVersionId);
         const binding = version?.catalog.workflowBindings.find((item) => item.workflowKey === action.workflowKey);
-        const v2Version = this.businessCatalogVersions.get(action.tenantId)?.find((item) => item.status === 'published' && item.catalogVersionRef === action.catalogVersionId);
-        const v2Route = v2Version ? resolveWorkflowRoute(v2Version, action.workflowKey) : null;
+        const catalogVersion = this.businessCatalogVersions.get(action.tenantId)?.find((item) => item.status === 'published' && item.catalogVersionRef === action.catalogVersionId);
+        const catalogRoute = catalogVersion ? resolveWorkflowRoute(catalogVersion, action.workflowKey) : null;
         return Boolean(binding?.active && isWorkflowClaimableBinding(binding) && binding.n8nWorkflowId === n8nWorkflowId)
-          || Boolean(v2Route?.n8nWorkflowId === n8nWorkflowId);
+          || Boolean(catalogRoute?.n8nWorkflowId === n8nWorkflowId);
       })
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id));
     const claimed: ActionRequest[] = [];

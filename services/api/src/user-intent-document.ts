@@ -55,7 +55,7 @@ export const assertSafeUserIntentDocument = (document: UserIntentDocument): void
       throw new Error('INTENT_DOCUMENT_INVALID_GOAL_CONFIRMATION');
     }
   }
-  if (document.catalogSource === 'v2' && document.goalConfirmed && !decision) {
+  if (document.catalogSource === 'published' && document.goalConfirmed && !decision) {
     throw new Error('INTENT_DOCUMENT_MISSING_GOAL_CONFIRMATION');
   }
   if (document.lastQuestion && document.lastQuestion.length > 2_000) throw new Error('INTENT_DOCUMENT_BOUNDS');

@@ -37,7 +37,7 @@ dbSuite('P2 disposable PostgreSQL integration', () => {
     }
     pool = new Pool({ connectionString: url!, max: 3 });
     await pool.query('SELECT 1 FROM chat_sessions LIMIT 0'); // schema preflight
-    await pool.query('SELECT 1 FROM intent_catalog_v2_versions LIMIT 0');
+    await pool.query('SELECT 1 FROM business_catalog_versions LIMIT 0');
     await pool.query(`INSERT INTO tenants (id, name, slug, status) VALUES ($1, $2, $3, 'active')`,
       [tenantId, 'P2 isolated test tenant', `p2-${tenantId.slice(0, 8)}`]);
     await pool.query(`
@@ -46,7 +46,7 @@ dbSuite('P2 disposable PostgreSQL integration', () => {
       VALUES ($1, $2, 1, 'published', 'Test Assistant', 'Hello', 'Helpful', 'Neutral', 'Concise', ARRAY['en'])
     `, [personaId, tenantId]);
     await pool.query(`
-      INSERT INTO intent_catalog_v2_versions (id, tenant_id, version, status, source_file_name,
+      INSERT INTO business_catalog_versions (id, tenant_id, version, status, source_file_name,
         source_hash, parser_version, catalog_json, catalog_version_ref)
       VALUES ($1,$2,1,'published','test.json',$3,'p2-test',$4::jsonb,$5)
     `, [catalogId, tenantId, 'a'.repeat(64), JSON.stringify({ sheets: { BusinessGoals: [

@@ -44,7 +44,7 @@ class FakeClient {
       const matches=params[0]===TENANT && (params[1]===''||params[1]===PERSONA);
       return {rows:matches?[structuredClone(db.persona)]:[],rowCount:matches?1:0};
     }
-    if(lower.includes('from intent_catalog_v2_versions')){
+    if(lower.includes('from business_catalog_versions')){
       const matches=params[0]===TENANT && (params[1]===''||params[1]===CATALOG);
       return {rows:matches?[structuredClone(db.catalog)]:[],rowCount:matches?1:0};
     }

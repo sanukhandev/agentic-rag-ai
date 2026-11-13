@@ -134,7 +134,7 @@ export class PostgresConversationRepository implements ConversationRepository {
         ? memory.catalogVersionId : '';
       const permanentlyUnconfigured = memory.catalogVersionId === 'unconfigured';
       const catalogRow = permanentlyUnconfigured ? undefined : await single(client, `
-        SELECT id, catalog_json FROM intent_catalog_v2_versions
+        SELECT id, catalog_json FROM business_catalog_versions
          WHERE tenant_id = $1
            AND (id::text = $2 OR ($2 = '' AND status = 'published'))
          ORDER BY version DESC LIMIT 1
