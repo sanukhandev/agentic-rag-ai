@@ -22,6 +22,7 @@ jobs:
       - run: npm ci
       - run: npm run verify:conversation-boundary
       - run: npm run verify:compose
+      - run: npm run test:schema-static
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run test:unit
@@ -42,3 +43,45 @@ jobs:
         working-directory: services/model-gateway
       - run: python -m pip install -r tools/ingestion/requirements.txt
       - run: PYTHONPATH=tools/ingestion python -m unittest discover -s tools/ingestion -p 'test_*.py'
+
+  postgres:
+    name: PostgreSQL fresh-migration, tenant security and bootstrap verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      database:
+        image: pgvector/pgvector:pg16@sha256:7b822b0aac60967beb1ea5e576b8602c94c300a157d187f385ae3e0da199b90a
+        env:
+          POSTGRES_USER: agentic
+          POSTGRES_PASSWORD: ci-disposable-postgres-secret
+          POSTGRES_DB: agentic_rag
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U agentic -d agentic_rag"
+          --health-interval 5s --health-timeout 3s --health-retries 25
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: '5432'
+      PGDATABASE: agentic_rag
+      PGUSER: agentic
+      PGPASSWORD: ci-disposable-postgres-secret
+      ADMIN_BOOTSTRAP_PASSWORD: ci-disposable-admin-test-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run test:schema-static
+      - name: Apply the entire schema migration chain
+        run: node scripts/migrate-vm.mjs
+      - name: Verify migration idempotency and checksums
+        run: node scripts/migrate-vm.mjs
+      - name: Bootstrap only the specified admin account
+        run: node scripts/bootstrap-admin.mjs
+      - name: Verify bootstrap idempotency
+        run: node scripts/bootstrap-admin.mjs
+      - name: Verify normalized schema, indexes, tenant boundaries and password hash
+        run: node scripts/verify-db-integrity.mjs
