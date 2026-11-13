@@ -7,7 +7,7 @@
 | [01 — Product requirements](01-product-requirements.md) | Agent, customer, ticket and administrative experience |
 | [02 — System architecture](02-system-architecture.md) | Runtime components, boundaries and events |
 | [03 — Foundry agent and gateway](03-conversation-engine.md) | Managed agent, function mediation and response contracts |
-| [04 — Agent persona and memory](04-tenant-persona-memory.md) | Identity, context, Redis, PostgreSQL, ticket lifecycle |
+| [04 — Agent persona and memory](04-agent-persona-memory.md) | Identity, context, Redis, PostgreSQL, ticket lifecycle |
 | [05 — Knowledge](05-rag-knowledge.md) | Foundry IQ retrieval, approval, citations, OCR document boundary |
 | [06 — Intents, offerings, actions](06-intents-actions-workflows.md) | Generic requirements and n8n-authorized business execution |
 | [07 — Security](07-security-and-validation.md) | Agent isolation, OTP, PII, consent and guard policies |
