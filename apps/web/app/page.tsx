@@ -25,7 +25,6 @@ import {
 import { VoiceVisualizer } from './voice-visualizer';
 import { getSpeechRecognitionConstructor, type SpeechRecognitionLike } from './voice-recognition';
 import { chatStreamUrl, ChatStreamClient } from './chat-stream-client';
-import { sendP6CandidateTurn } from './p6-candidate-client';
 
 type Config = {
   tenant: { name: string; slug: string };
@@ -48,10 +47,9 @@ type ChatDocument = { id: string; fileName: string; mimeType: string; sizeBytes:
 
 const configuredApi = process.env.NEXT_PUBLIC_API_URL?.trim();
 const api = configuredApi && configuredApi !== '/' ? configuredApi.replace(/\/$/u, '') : '';
-const p6CandidatePreview = process.env.NEXT_PUBLIC_P6_PREVIEW_ENABLED === 'true';
-const activeModel = p6CandidatePreview ? 'P6 Candidate Preview' : process.env.NEXT_PUBLIC_ACTIVE_MODEL?.trim() || 'Azure GPT-4.1-mini';
-const sessionStorageKey = (slug: string): string => `${p6CandidatePreview ? 'agentic-rag-p6-session' : 'agentic-rag-session'}:${slug}`;
-const sessionTokenStorageKey = (slug: string): string => `${p6CandidatePreview ? 'agentic-rag-p6-session-token' : 'agentic-rag-session-token'}:${slug}`;
+const activeModel = process.env.NEXT_PUBLIC_ACTIVE_MODEL?.trim() || 'Configured Azure/OpenAI model';
+const sessionStorageKey = (slug: string): string => `agentic-rag-session:${slug}`;
+const sessionTokenStorageKey = (slug: string): string => `agentic-rag-session-token:${slug}`;
 
 export default function Home() {
   const [tenantSlug, setTenantSlug] = useState('');
@@ -529,12 +527,8 @@ export default function Home() {
       const clientMessageId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `msg-${Date.now()}`;
       const sessionToken = sessionTokenRef.current;
       if (!sessionToken) throw new Error('The secure conversation session has expired. Please start again.');
-      const body = p6CandidatePreview
-        ? await sendP6CandidateTurn(api, activeSession, sessionToken, clientMessageId, trimmed)
-        : await (async () => {
-          if (!streamRef.current) streamRef.current = new ChatStreamClient(chatStreamUrl(api));
-          return streamRef.current.send(activeSession, sessionToken, clientMessageId, trimmed, postbackValue);
-        })();
+      if (!streamRef.current) streamRef.current = new ChatStreamClient(chatStreamUrl(api));
+      const body = await streamRef.current.send(activeSession, sessionToken, clientMessageId, trimmed, postbackValue);
 
       // Apply natural language formatting to technical abstentions (Requirement 9)
       const naturalText = formatNaturalAbstention(body.answer);
@@ -581,9 +575,10 @@ export default function Home() {
     }]);
   };
 
-  const acceptContactConsent = (proposalId: string) => {
-    setMessages((prev) => prev.map((item) => item.consentProposal?.id === proposalId ? { ...item, consentState: 'approved' } : item));
-    void send(undefined, 'v2:contact-consent:grant');
+  const acceptContactConsent = (_proposalId: string) => {
+    // No authoritative consent-authorization route is registered in this build.
+    // Never display customer consent as granted without a persisted Node acknowledgment.
+    setError('Contact consent cannot be recorded in this build. No action was authorized.');
   };
 
   const trackAction = async (proposalId: string, activeSessionId: string) => {
@@ -822,7 +817,7 @@ export default function Home() {
                 <div className="flex flex-col">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-bold tracking-[0.18em] text-neutral-900 uppercase">Agentic RAG AI</span>
-                    <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] font-mono font-medium text-neutral-600">v2.4</span>
+                    <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] font-mono font-medium text-neutral-600">Clean architecture</span>
                   </div>
                   <span className="text-[11px] font-normal text-neutral-500">Tenant conversational assistant</span>
                 </div>

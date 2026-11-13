@@ -31,8 +31,8 @@ if (env.STORE !== 'postgres' || !env.DATABASE_URL) {
   throw new Error('The conversation architecture requires a PostgreSQL Store');
 }
 const required = [
-  'PYTHON_MODEL_URL', 'MODEL_GATEWAY_SERVICE_KEY', 'P4_READ_SCOPE_SECRET',
-  'P4_EVIDENCE_SIGNING_KEY', 'PII_VAULT_KEY', 'JWT_SECRET', 'CHANNEL_CREDENTIAL_KEY',
+  'PYTHON_MODEL_URL', 'MODEL_GATEWAY_SERVICE_KEY', 'READ_SCOPE_SECRET',
+  'EVIDENCE_SIGNING_KEY', 'PII_VAULT_KEY', 'JWT_SECRET', 'CHANNEL_CREDENTIAL_KEY',
 ] as const;
 for (const name of required) if (!env[name]) throw new Error(`Missing private server setting: ${name}`);
 
@@ -54,9 +54,9 @@ const readOnlyRepository = new PostgresConversationRepository(pool, authorizer, 
 const registry = new NodeReadToolRegistry();
 registerP3ReadTools(registry, { repository: readOnlyRepository, store, embedding });
 const tools = new ScopedP3ReadTools(
-  env.P4_READ_SCOPE_SECRET!, readOnlyRepository, store, registry,
+  env.READ_SCOPE_SECRET!, readOnlyRepository, store, registry,
 );
-const signer = new P4EvidenceSigner(env.P4_EVIDENCE_SIGNING_KEY!);
+const signer = new P4EvidenceSigner(env.EVIDENCE_SIGNING_KEY!);
 const verifier = new EvidenceClaimVerifier(
   signer, store, new PrivateGroundingReviewer(gatewayUrl, gatewayKey),
 );
