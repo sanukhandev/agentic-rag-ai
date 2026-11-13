@@ -177,7 +177,7 @@ export const phaseFor = (input: { intentKey: string | null; missingSlot: string 
   return 'DISCOVERY';
 };
 
-/** A closed, full-message decision grammar; invoke ONLY for an active, scoped V2 prompt. */
+/** A closed, full-message decision grammar; invoke ONLY for an active, scoped customer prompt. */
 export type ScopedGoalDecision = 'confirmed' | 'rejected' | 'corrected' | 'interruption' | 'ambiguous';
 export const classifyScopedGoalDecision = (message: string): ScopedGoalDecision => {
   const text = message.trim().toLowerCase().replace(/\s+/gu, ' ');

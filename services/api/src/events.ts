@@ -2,12 +2,12 @@ import { z } from 'zod';
 import type { DomainEventType, EventPayload, EventStream, OutboxEvent } from './types.js';
 
 export const EVENT_STREAMS = {
-  crm: 'rag:v2:crm',
-  documents: 'rag:v2:documents',
-  actions: 'rag:v2:actions',
-  notifications: 'rag:v2:notifications',
-  ingestion: 'rag:v2:ingestion',
-  deadLetter: 'rag:v2:dead-letter',
+  crm: 'rag:workflow:crm',
+  documents: 'rag:workflow:documents',
+  actions: 'rag:workflow:actions',
+  notifications: 'rag:workflow:notifications',
+  ingestion: 'rag:workflow:ingestion',
+  deadLetter: 'rag:workflow:dead-letter',
 } as const satisfies Record<string, EventStream>;
 
 const uuid = z.string().guid();
@@ -24,7 +24,7 @@ export const outboxEventSchema = z.object({
     'conversation.notification.requested.v1',
     'ingestion.progress.v1',
   ]),
-  stream: z.enum(['rag:v2:crm', 'rag:v2:documents', 'rag:v2:actions', 'rag:v2:notifications', 'rag:v2:ingestion', 'rag:v2:dead-letter']),
+  stream: z.enum(['rag:workflow:crm', 'rag:workflow:documents', 'rag:workflow:actions', 'rag:workflow:notifications', 'rag:workflow:ingestion', 'rag:workflow:dead-letter']),
   tenantId: uuid,
   sessionId: uuid.nullable(),
   actionId: uuid.nullable(),

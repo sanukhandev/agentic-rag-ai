@@ -115,7 +115,7 @@ export class ActionGateway {
     }
     const consentGranted = action.payload.contactConsent === false;
     const approved = { ...action, state: 'approved' as const, result: null, payload: consentGranted ? { ...action.payload, contactConsent: true } : action.payload };
-    // V2 turns persist the approval and conversation response in one store transaction.
+    // Authorized turns persist the approval and conversation response in one store transaction.
     // The deferred result is validated here but has no side effect until that commit.
     if (options.deferPersistence) return approved;
     if (session) await this.store.approveActionAndSession(approved, session);

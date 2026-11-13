@@ -6,7 +6,7 @@ import { P5ProposalValidator, type P5ActionStateReader } from './p5-proposal-val
 
 /**
  * P5 opt-in candidate. P4 factory remains unchanged; no public endpoint,
- * CRM mutation, provider dispatch or removal of the production V2 engine.
+ * CRM mutation, provider dispatch or removal of the retired conversation engine.
  * P6 must provide a tenant/session-authenticated action-state reader and the
  * existing durable encrypted privacy boundary before runtime enablement.
  */

@@ -91,7 +91,7 @@ describe('P6 isolated customer-facing canary route', () => {
     expect(f.calls).toBe(0);
   });
 
-  it('rejects unapproved origins and legacy V2 user turns', async () => {
+  it('rejects unapproved origins and legacy-format user turns', async () => {
     const wrongOrigin = fixture();
     const a = await request(wrongOrigin.app).post('/api/v1/chat/candidate/turn')
       .set('origin', 'http://evil.test').set('x-agentic-session-token', token).send(input);

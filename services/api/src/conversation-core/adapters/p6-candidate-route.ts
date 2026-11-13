@@ -97,7 +97,7 @@ export function registerP6CandidateRoute(app: Express, input: {
       const actor = customerActorFromSessionToken({
         tenantId: session.tenantId, sessionId, sessionAccessToken: token,
       });
-      // A V2 session containing a legacy-format user message must never be
+      // A session containing a legacy-format user message must never be
       // silently repurposed for P6. Use a fresh session for preview.
       const legacy = await input.pool.connect();
       try {

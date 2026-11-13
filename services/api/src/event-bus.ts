@@ -70,7 +70,7 @@ export class RedisStreamBus implements StreamBus {
 
   async deadLetter(event: OutboxEvent, reason: string): Promise<void> {
     await this.connect();
-    await this.client.xAdd('rag:v2:dead-letter', '*', { ...eventFields(event), reason: reason.slice(0, 500) }, { TRIM: { strategy: 'MAXLEN', strategyModifier: '~', threshold: this.maxLength } });
+    await this.client.xAdd('rag:workflow:dead-letter', '*', { ...eventFields(event), reason: reason.slice(0, 500) }, { TRIM: { strategy: 'MAXLEN', strategyModifier: '~', threshold: this.maxLength } });
   }
 }
 
@@ -158,7 +158,7 @@ export class N8nEventBridge {
         }
       }
       if (route.providerType === 'remote_n8n') {
-        const response = await fetch(`${this.nodeUrl.replace(/\/$/u, '')}/api/v2/internal/remote-workflows/execute`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-agentic-internal-secret': this.secret, 'x-agentic-event-id': event.eventId }, body: JSON.stringify({ actionId: event.actionId, tenantId: event.tenantId, sessionId: event.sessionId, workflowKey: route.workflowKey, catalogVersionId: actionForDispatch?.catalogVersionId ?? null, n8nWorkflowId: route.n8nWorkflowId, eventId: event.eventId, correlationId: event.correlationId, attempt }), signal: AbortSignal.timeout(this.timeoutMs) });
+        const response = await fetch(`${this.nodeUrl.replace(/\/$/u, '')}/api/internal/remote-workflows/execute`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-agentic-internal-secret': this.secret, 'x-agentic-event-id': event.eventId }, body: JSON.stringify({ actionId: event.actionId, tenantId: event.tenantId, sessionId: event.sessionId, workflowKey: route.workflowKey, catalogVersionId: actionForDispatch?.catalogVersionId ?? null, n8nWorkflowId: route.n8nWorkflowId, eventId: event.eventId, correlationId: event.correlationId, attempt }), signal: AbortSignal.timeout(this.timeoutMs) });
         if (!response.ok) {
           if ([408, 425, 429, 500, 502, 503, 504].includes(response.status)) throw new TransientEventDispatchError(`remote n8n dispatch returned transient status ${response.status}.`);
           throw new PermanentEventDispatchError(`remote n8n dispatch returned permanent status ${response.status}.`);
@@ -226,9 +226,9 @@ export class N8nEventBridge {
     const action = await this.store.getAction(event.actionId);
     if (!action || action.tenantId !== event.tenantId || !['approved', 'processing'].includes(action.state)) return null;
     if (!action.catalogVersionId) return { workflowKey: action.workflowKey, providerType: 'internal_n8n', webhookPath: action.webhookPath ?? 'lead-capture' };
-    const v2Version = (await this.store.listBusinessCatalogVersions(action.tenantId)).find(candidate => candidate.status === 'published' && candidate.catalogVersionRef === action.catalogVersionId);
-    const v2Route = v2Version ? resolveWorkflowRoute(v2Version, action.workflowKey) : null;
-    if (v2Version) return v2Route ? { workflowKey: v2Route.workflowKey, providerType: v2Route.providerType, webhookPath: v2Route.webhookPath, n8nWorkflowId: v2Route.n8nWorkflowId, payloadContract: v2Route.payloadContract } : null;
+    const catalogVersion = (await this.store.listBusinessCatalogVersions(action.tenantId)).find(candidate => candidate.status === 'published' && candidate.catalogVersionRef === action.catalogVersionId);
+    const catalogRoute = catalogVersion ? resolveWorkflowRoute(catalogVersion, action.workflowKey) : null;
+    if (catalogVersion) return catalogRoute ? { workflowKey: catalogRoute.workflowKey, providerType: catalogRoute.providerType, webhookPath: catalogRoute.webhookPath, n8nWorkflowId: catalogRoute.n8nWorkflowId, payloadContract: catalogRoute.payloadContract } : null;
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(action.catalogVersionId)) return null;
     const version = await this.store.getIntentCatalogVersion(action.tenantId, action.catalogVersionId);
     const binding = version?.catalog.workflowBindings.find((candidate) => candidate.workflowKey === action.workflowKey && candidate.active);
@@ -240,11 +240,11 @@ export class N8nEventBridge {
     const job = await this.store.getDocumentProcessingJob(event.payloadRef, event.tenantId);
     if (!job || job.tenantId !== event.tenantId || !['queued', 'processing'].includes(job.status)) return null;
     const document = await this.store.getSupportingDocument(job.documentId, event.tenantId);
-    const v2Version = document?.catalogVersionId
+    const catalogVersion = document?.catalogVersionId
       ? (await this.store.listBusinessCatalogVersions(event.tenantId)).find((candidate) => candidate.status === 'published' && candidate.catalogVersionRef === document.catalogVersionId)
       : null;
-    const v2Binding = v2Version?.catalog.sheets.WorkflowBindings.find((candidate) => candidate.workflowKey === job.workflowKey && candidate.enabled);
-    if (v2Binding?.webhookPath) return { workflowKey: v2Binding.workflowKey, providerType: v2Binding.providerType, webhookPath: v2Binding.webhookPath, ...(v2Binding.n8nWorkflowId ? { n8nWorkflowId: v2Binding.n8nWorkflowId } : {}), ...(v2Binding.payloadContract ? { payloadContract: v2Binding.payloadContract } : {}) };
+    const catalogBinding = catalogVersion?.catalog.sheets.WorkflowBindings.find((candidate) => candidate.workflowKey === job.workflowKey && candidate.enabled);
+    if (catalogBinding?.webhookPath) return { workflowKey: catalogBinding.workflowKey, providerType: catalogBinding.providerType, webhookPath: catalogBinding.webhookPath, ...(catalogBinding.n8nWorkflowId ? { n8nWorkflowId: catalogBinding.n8nWorkflowId } : {}), ...(catalogBinding.payloadContract ? { payloadContract: catalogBinding.payloadContract } : {}) };
     const version = await this.store.getPublishedIntentCatalog(job.tenantId);
     const binding = version?.catalog.workflowBindings.find((candidate) => candidate.workflowKey === job.workflowKey && candidate.active);
     return binding ? { workflowKey: binding.workflowKey, providerType: 'internal_n8n', webhookPath: binding.webhookPath, n8nWorkflowId: binding.n8nWorkflowId, payloadContract: binding.payloadContract } : null;

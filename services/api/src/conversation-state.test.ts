@@ -46,7 +46,7 @@ describe('conversation state concurrency merge', () => {
   it('keeps the latest intent when an older workflow callback races with it', () => {
     const latest = {
       ...newConversationState(),
-      catalogVersionId: 'catalog-v2',
+      catalogVersionId: 'catalog-published',
       selectedIntentKey: 'company.setup',
       pendingPrompt: { id: 'new-prompt', type: 'slot' as const, intentKey: 'company.setup', slotKey: 'business_activity', issuedAt: '2026-10-22T10:01:00.000Z' },
       workflowStatus: 'queued' as const,
@@ -64,7 +64,7 @@ describe('conversation state concurrency merge', () => {
     const merged = mergeWorkflowCallbackState(latest, candidate);
 
     expect(merged.selectedIntentKey).toBe('company.setup');
-    expect(merged.catalogVersionId).toBe('catalog-v2');
+    expect(merged.catalogVersionId).toBe('catalog-published');
     expect(merged.pendingPrompt).toEqual(latest.pendingPrompt);
     expect(merged.workflowStatus).toBe('queued');
     expect(merged.rollingSummary).toBe(latest.rollingSummary);

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import { N8nEventBridge } from './event-bus.js';
-import { validateCatalogV2 } from './conversation-core/catalog/catalog.js';
+import { validateBusinessCatalog } from './conversation-core/catalog/catalog.js';
 import { MemoryStore } from './store-memory.js';
 
 describe('N8n document event routing', () => {
@@ -13,7 +13,7 @@ describe('N8n document event routing', () => {
     const store = {
       getDocumentProcessingJob: async () => ({ documentId, tenantId, status, workflowKey: 'anc.document.ocr.extract' }),
       getSupportingDocument: async () => ({ id: documentId, tenantId, catalogVersionId: catalogVersionRef }),
-      listIntentCatalogV2Versions: async () => [{
+      listBusinessCatalogVersions: async () => [{
         status: 'published',
         catalogVersionRef,
         catalog: { sheets: { WorkflowBindings: [{ workflowKey: 'anc.document.ocr.extract', registryKey: 'document.sf02.upload', providerType: 'node', payloadSchemaRef: 'payload.anc.document.ocr.v1', callbackSchemaRef: 'callback.anc.document.ocr.v1', evidencePolicyKey: 'document.ocr.queued', n8nWorkflowId: 'DOC01DocumentProcessing', webhookPath: 'anc-test-document-ocr-wf-1', payloadContract: 'anc-document-ocr-v1', enabled: true }] } },
@@ -28,14 +28,14 @@ describe('N8n document event routing', () => {
     const store = new MemoryStore();
     const tenant = await store.createTenant({ name: 'Synthetic Remote Tenant', slug: `remote-${randomUUID()}` });
     const session = await store.createSession(tenant.id);
-    const parsed = validateCatalogV2(JSON.parse(readFileSync(new URL('./fixtures/catalog-reference-seven-stage.json', import.meta.url), 'utf8')));
+    const parsed = validateBusinessCatalog(JSON.parse(readFileSync(new URL('./fixtures/catalog-reference-seven-stage.json', import.meta.url), 'utf8')));
     if (!parsed.ok || !parsed.document) throw new Error('fixture invalid');
-    const version = await store.createIntentCatalogV2Version({ tenantId: tenant.id, status: 'draft', sourceFileName: 'fixture', sourceHash: 'remote-event-test', parserVersion: 'test', catalog: parsed.document, catalogVersionRef: 'anc:v2:' + 'c'.repeat(64) });
-    await store.publishIntentCatalogV2Version(tenant.id, version.id);
+    const version = await store.createBusinessCatalogVersion({ tenantId: tenant.id, status: 'draft', sourceFileName: 'fixture', sourceHash: 'remote-event-test', parserVersion: 'test', catalog: parsed.document, catalogVersionRef: 'anc:v2:' + 'c'.repeat(64) });
+    await store.publishBusinessCatalogVersion(tenant.id, version.id);
     const action = await store.createAction({ id: randomUUID(), tenantId: tenant.id, sessionId: session.id, workflowKey: 'crm.lead.create', intentKey: 'anc.company_formation', catalogVersionId: version.catalogVersionRef, opportunityId: randomUUID(), actionKey: 'lead.create', actionRevision: 1, idempotencyKey: 'remote-event-idempotency', state: 'approved', opaqueReference: 'remote-event-action', payload: { contactConsent: true, slotValues: { lead_contact_name: '[NAME_1]', lead_contact_channel: '[EMAIL_1]' } }, createdAt: new Date().toISOString(), result: null });
-    const event: import('./types.js').OutboxEvent = { eventId: randomUUID(), eventType: 'intent.action.requested.v1', stream: 'rag:v2:actions', tenantId: tenant.id, sessionId: session.id, actionId: action.id, aggregateId: action.id, aggregateVersion: 1, workflowKey: action.workflowKey, payloadRef: action.id, idempotencyKey: action.idempotencyKey, correlationId: randomUUID(), payload: {}, occurredAt: new Date().toISOString(), publishedAt: null, attempts: 1, leaseExpiresAt: null, lastError: null };
+    const event: import('./types.js').OutboxEvent = { eventId: randomUUID(), eventType: 'intent.action.requested.v1', stream: 'rag:workflow:actions', tenantId: tenant.id, sessionId: session.id, actionId: action.id, aggregateId: action.id, aggregateVersion: 1, workflowKey: action.workflowKey, payloadRef: action.id, idempotencyKey: action.idempotencyKey, correlationId: randomUUID(), payload: {}, occurredAt: new Date().toISOString(), publishedAt: null, attempts: 1, leaseExpiresAt: null, lastError: null };
     const fetchMock = vi.fn(async (url: string) => {
-      expect(url).toBe('http://api:4000/api/v2/internal/remote-workflows/execute');
+      expect(url).toBe('http://api:4000/api/internal/remote-workflows/execute');
       return new Response(JSON.stringify({ providerStatus: 'accepted', result: { externalReference: '00Q-SYNTHETIC-1', providerOutcome: 'success' }, outcome: { providerOutcome: 'success' } }), { status: 200, headers: { 'content-type': 'application/json' } });
     });
     vi.stubGlobal('fetch', fetchMock);
