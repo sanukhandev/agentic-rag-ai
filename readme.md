@@ -5,7 +5,7 @@ Agent-centric, persona-driven support and business automation: one **Agent** own
 > **Target architecture only.** The current branch still contains tenant-scoped SQL, pgvector, a Python LangGraph loop, WebSockets and legacy CRM-centered features. Updated docs do **not** indicate that these have been replaced.
 
 ## Intended single execution path
-\`\`\`text
+```text
 Customer (Next.js chat / ticket header / secure OTP / uploads)
   -> Node API (agent resolution, authentication, durable ticket event, SSE)
   -> Python FastAPI Gateway -> versioned Microsoft Foundry Agent
@@ -19,7 +19,7 @@ Customer-approved operation
   -> transactional PostgreSQL action/outbox
   -> worker -> n8n -> external provider
   -> verified callback/reconciliation -> ticket event + SSE
-\`\`\`
+```
 
 ### Data ownership
 PostgreSQL: authoritative agents, configurations, accounts, messages, tickets, facts, operations, summaries and audit. Redis: cache, coordination, OTP challenge and event distribution only. Foundry IQ/Azure AI Search: separate, indexed approved knowledge for each Agent. Customer-uploaded documents are private ticket assets processed through OCR/Document Intelligence.
@@ -28,7 +28,7 @@ PostgreSQL: authoritative agents, configurations, accounts, messages, tickets, f
 - Foundry selects natural responses, relevant tools, next questions and **proposes** actions; Node authorizes reads and every consequential action.
 - Keep Python FastAPI; remove LangGraph after replacement with Foundry Agent Service and verified parity. Remove local pgvector search once Foundry knowledge retrieval works and a plain PostgreSQL baseline passes.
 - Disable web browsing and arbitrary network tools. Only gateway-mediated, agent-allowlisted application functions are available.
-- \`get_intent_requirements\` is generic; intent goals and product/service offerings are agent-managed versioned catalogs.
+- `get_intent_requirements` is generic; intent goals and product/service offerings are agent-managed versioned catalogs.
 - Ticket-first customer journey: greeting → intent/knowledge → optional verified account/OTP → optional document extraction → consented n8n lead/quote → explicit ticket closure.
 - Durable intake before asynchronous transcript/summary processing. Redis/SSE are not an authoritative business ledger.
 - Preserve privacy and independently verify citations, prices, consent and provider outcomes.
