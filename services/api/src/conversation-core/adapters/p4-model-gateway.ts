@@ -12,7 +12,7 @@ export class HttpP4ModelGateway implements ModelGateway {
   async runTurn(envelope: ModelTurnEnvelope, signal: AbortSignal): Promise<ModelCandidate> {
     const deadline = AbortSignal.timeout(Math.min(this.timeoutMs, envelope.limits.deadlineMs));
     const combined = AbortSignal.any([signal, deadline]);
-    const response = await fetch(`${this.baseUrl.replace(/\/$/u, '')}/internal/p4/conversation/turn`, {
+    const response = await fetch(`${this.baseUrl.replace(/\/$/u, '')}/internal/conversation/turn`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-internal-service-key': this.serviceKey },
       body: JSON.stringify(envelope),

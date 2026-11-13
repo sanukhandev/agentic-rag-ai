@@ -1,4 +1,4 @@
-"""Isolated P4 protocol. Does not modify the live V2 runtime."""
+"""Authoritative private conversation contract. No access to customer databases or provider writes."""
 from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
