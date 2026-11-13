@@ -1,4 +1,4 @@
-import { catalogV2VersionRef, validateCatalogV2, type CatalogV2Document } from '../../conversation/catalog.js';
+import { catalogV2VersionRef, validateCatalogV2, type CatalogV2Document } from '../catalog/catalog.js';
 import type { Store } from '../../types.js';
 import { sanitizeKnowledgeText } from '../../privacy.js';
 import type { ModelEnvelopeEnricher } from '../turn-engine.js';
