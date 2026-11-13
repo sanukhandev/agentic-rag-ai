@@ -36,7 +36,7 @@ function setup(grant: Record<string, unknown> | null, sessionRevision = 5) {
   const pool = {
     async connect(): Promise<SqlClient> {
       return {
-        async query(_sql: string) { queries++; return { rows: grant ? [grant] : [] }; },
+        async query(_sql: string) { queries++; return { rows: grant ? [grant] : [], rowCount: grant ? 1 : 0 }; },
         release() {},
       };
     },

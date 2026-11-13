@@ -29,7 +29,7 @@ function fixture() {
     async listSourceChunks() { return [chunk]; },
   } as unknown as Pick<Store, 'getSource' | 'listSourceChunks'>;
   const grounding = {
-    async verify(request: { claims: Array<{ claimId: string; evidence: Array<{ citationId: string }> }> }) {
+    async verify(request: { claims: readonly { readonly claimId: string; readonly evidence: readonly { readonly citationId: string }[] }[] }) {
       return request.claims.map(claim => ({ claimId: claim.claimId,
         citationId: claim.evidence[0]?.citationId ?? null,
         verdict: reviewed ? 'supported' : 'insufficient',
