@@ -12,7 +12,7 @@ import { P5PinnedCatalogReader } from './conversation-core/adapters/p5-catalog.j
 import { createP5CandidateEngine } from './conversation-core/adapters/p5-candidate-factory.js';
 import { SessionScopedPrivacyAdapter } from './conversation-core/adapters/privacy-adapter.js';
 import { PostgresScopedPrivacyVault } from './conversation-core/adapters/p6-session-vault.js';
-import { P6TrustedActionStateReader } from './conversation-core/adapters/p6-trusted-action-state.js';
+import { SessionActionAuthorityReader } from './conversation-core/adapters/session-action-authority.js';
 import { registerP6CandidateRoute } from './conversation-core/adapters/p6-candidate-route.js';
 import { createHash } from 'node:crypto';
 import { Pool } from 'pg';
@@ -88,7 +88,7 @@ if (process.env.P4_INTERNAL_READS_ENABLED === 'true') {
       new HttpV2GroundingVerifier(process.env.PYTHON_MODEL_URL, process.env.MODEL_GATEWAY_SERVICE_KEY));
     const engine = createP5CandidateEngine({
       repository, tools, verifier, privacy, catalogReader: new P5PinnedCatalogReader(store),
-      actions: new P6TrustedActionStateReader(store, authorizer),
+      actions: new SessionActionAuthorityReader(store, pool, authorizer),
       pythonUrl: process.env.PYTHON_MODEL_URL, serviceKey: process.env.MODEL_GATEWAY_SERVICE_KEY,
     });
     p6CandidateApi = (app: Express) => registerP6CandidateRoute(app, {
