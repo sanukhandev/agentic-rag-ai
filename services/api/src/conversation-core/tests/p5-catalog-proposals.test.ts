@@ -1,12 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { catalogV2VersionRef, validateCatalogV2, type CatalogV2Document } from '../../conversation/catalog.js';
+import { catalogV2VersionRef, validateCatalogV2, type CatalogV2Document } from '../catalog/catalog.js';
 import type { Store } from '../../types.js';
 import type { ModelCandidate, SessionSnapshot, TrustedActor } from '../contracts.js';
 import { P5CatalogAuthorizationError, P5CatalogEnvelopeEnricher, P5PinnedCatalogReader } from '../adapters/p5-catalog.js';
 import { P5ProposalError, P5ProposalValidator, type P5TrustedActionState } from '../adapters/p5-proposal-validator.js';
 
-const fixture = JSON.parse(readFileSync(new URL('../../fixtures/ancfz-catalog-v2-seven-stage.json', import.meta.url), 'utf8')) as unknown;
+const fixture = JSON.parse(readFileSync(new URL('../../fixtures/catalog-reference-seven-stage.json', import.meta.url), 'utf8')) as unknown;
 const parsed = validateCatalogV2(fixture);
 if (!parsed.ok || !parsed.document) throw new Error('Reference catalog is invalid');
 const catalog: CatalogV2Document = parsed.document;

@@ -47,10 +47,8 @@ describe('P8 production conversation architecture boundary', () => {
 
   it('owns catalog validation and integrity inside conversation-core', () => {
     const canonical = source(join(coreDirectory, 'catalog/catalog.ts'));
-    const compatibility = source(resolve(apiDirectory, 'conversation/catalog.ts'));
     expect(canonical).toContain('export const validateCatalogV2');
     expect(canonical).toContain('export const catalogV2VersionRef');
-    expect(compatibility.trim()).toContain("export * from '../conversation-core/catalog/catalog.js'");
     for (const adapter of ['p5-catalog.ts', 'session-action-authority.ts']) {
       const code = source(join(coreDirectory, 'adapters', adapter));
       expect(moduleSpecifiers(code)).toContain('../catalog/catalog.js');

@@ -1,6 +1,6 @@
 import type { IntentCatalogV2Version } from '../types.js';
 
-export type V2WorkflowRoute = {
+export type WorkflowRoute = {
   workflowKey: string;
   providerType: string;
   webhookPath: string;
@@ -8,7 +8,7 @@ export type V2WorkflowRoute = {
   payloadContract: string;
 };
 
-export type V2DocumentRoute = {
+export type DocumentRoute = {
   workflowKey: string;
   registryKey: string;
   providerType: string;
@@ -21,8 +21,8 @@ export type V2DocumentRoute = {
   mimeTypes?: string[];
 };
 
-/** A V2 workflow is dispatchable only when the published catalog binds every transport identity. */
-export const resolveV2WorkflowRoute = (version: IntentCatalogV2Version, workflowKey: string): V2WorkflowRoute | null => {
+/** A Published workflow is dispatchable only when the published catalog binds every transport identity. */
+export const resolveWorkflowRoute = (version: IntentCatalogV2Version, workflowKey: string): WorkflowRoute | null => {
   const binding = version.status === 'published'
     ? version.catalog.sheets.WorkflowBindings.find(candidate => candidate.workflowKey === workflowKey && candidate.enabled)
     : null;
@@ -31,10 +31,10 @@ export const resolveV2WorkflowRoute = (version: IntentCatalogV2Version, workflow
 };
 
 /** Resolves document route from published catalog ToolBindings, DocumentPolicies, and WorkflowBindings. */
-export const resolveV2DocumentRoute = (
+export const resolveDocumentRoute = (
   version: IntentCatalogV2Version,
-  goalKey: string = 'anc.company_formation',
-): V2DocumentRoute | null => {
+  goalKey: string,
+): DocumentRoute | null => {
   if (version.status !== 'published') return null;
   const policy = version.catalog.sheets.DocumentPolicies.find(
     candidate => candidate.goalKey === goalKey && candidate.stageKey === 'document_upload' && candidate.enabled,

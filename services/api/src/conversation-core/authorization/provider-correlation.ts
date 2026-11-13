@@ -1,25 +1,25 @@
 import { z } from 'zod';
-import type { ActionRequest } from '../types.js';
+import type { ActionRequest } from '../../types.js';
 
 const actionKey = z.string().trim().regex(/^[a-z][a-z0-9._-]{1,79}$/u);
-export const v2CatalogVersionRefSchema = z.string().trim().min(8).max(240);
-export const v2ProviderCorrelationSchema = z.object({
+export const catalogVersionRefSchema = z.string().trim().min(8).max(240);
+export const providerCorrelationSchema = z.object({
   idempotencyKey: z.string().trim().min(1).max(200),
   sessionId: z.string().guid(),
   opportunityId: z.string().guid(),
-  catalogVersionId: v2CatalogVersionRefSchema,
+  catalogVersionId: catalogVersionRefSchema,
   actionKey,
   actionRevision: z.number().int().positive(),
 }).strict();
 
 /** Callback payload includes tenant identity; shared shape can be spread into routes
  * which already declare tenantId without duplicate-property compilation errors. */
-export const v2CallbackCorrelationSchema = v2ProviderCorrelationSchema.extend({
+export const callbackCorrelationSchema = providerCorrelationSchema.extend({
   tenantId: z.string().guid(),
 }).strip(); // Full callback bodies carry action/status fields; validate only correlated identity.
-export type V2ProviderCorrelation = z.infer<typeof v2CallbackCorrelationSchema>;
+export type ProviderCorrelation = z.infer<typeof callbackCorrelationSchema>;
 
-export const validateV2ProviderCorrelation = (action: ActionRequest, input: V2ProviderCorrelation): string | null => {
+export const validateProviderCorrelation = (action: ActionRequest, input: ProviderCorrelation): string | null => {
   if (input.tenantId !== action.tenantId) return 'tenant_mismatch';
   if (input.idempotencyKey !== action.idempotencyKey) return 'idempotency_mismatch';
   if (input.sessionId !== action.sessionId) return 'session_mismatch';

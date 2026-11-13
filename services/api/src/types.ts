@@ -1100,4 +1100,4 @@ export interface Store {
   updateVocabularyCandidate(candidate: IntentVocabularyCandidate): Promise<IntentVocabularyCandidate>;
   getTenantStats(tenantId: string): Promise<TenantStats>;
 }
-import type { CatalogV2Document } from './conversation/catalog.js';
+import type { CatalogV2Document } from './conversation-core/catalog/catalog.js';

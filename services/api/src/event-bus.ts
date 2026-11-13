@@ -2,7 +2,7 @@ import { createClient } from 'redis';
 import { randomUUID } from 'node:crypto';
 import type { ActionExecution, ActionRequest, Store, OutboxEvent } from './types.js';
 import { eventFields, eventFromFields } from './events.js';
-import { resolveV2WorkflowRoute } from './conversation/workflow-bridge.js';
+import { resolveWorkflowRoute } from './conversation-core/catalog/workflow-routing.js';
 
 export interface StreamMessage {
   id: string;
@@ -227,7 +227,7 @@ export class N8nEventBridge {
     if (!action || action.tenantId !== event.tenantId || !['approved', 'processing'].includes(action.state)) return null;
     if (!action.catalogVersionId) return { workflowKey: action.workflowKey, providerType: 'internal_n8n', webhookPath: action.webhookPath ?? 'lead-capture' };
     const v2Version = (await this.store.listIntentCatalogV2Versions(action.tenantId)).find(candidate => candidate.status === 'published' && candidate.catalogVersionRef === action.catalogVersionId);
-    const v2Route = v2Version ? resolveV2WorkflowRoute(v2Version, action.workflowKey) : null;
+    const v2Route = v2Version ? resolveWorkflowRoute(v2Version, action.workflowKey) : null;
     if (v2Version) return v2Route ? { workflowKey: v2Route.workflowKey, providerType: v2Route.providerType, webhookPath: v2Route.webhookPath, n8nWorkflowId: v2Route.n8nWorkflowId, payloadContract: v2Route.payloadContract } : null;
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(action.catalogVersionId)) return null;
     const version = await this.store.getIntentCatalogVersion(action.tenantId, action.catalogVersionId);

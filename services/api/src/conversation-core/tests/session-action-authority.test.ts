@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { validateCatalogV2, catalogV2VersionRef } from '../../conversation/catalog.js';
-const fixture = JSON.parse(readFileSync(new URL('../../fixtures/ancfz-catalog-v2-seven-stage.json', import.meta.url), 'utf8')) as unknown;
+import { validateCatalogV2, catalogV2VersionRef } from '../catalog/catalog.js';
+const fixture = JSON.parse(readFileSync(new URL('../../fixtures/catalog-reference-seven-stage.json', import.meta.url), 'utf8')) as unknown;
 const parsed = validateCatalogV2(fixture);
 if (!parsed.ok || !parsed.document) throw new Error('Missing reference catalog');
 const reference = parsed.document;
@@ -53,7 +53,7 @@ const standard = {
   customer_authorized_at: '2026-01-01',
 };
 
-describe('New action authority — no V2 inferred confirmation', () => {
+describe('New action authority — no inferred confirmation', () => {
   it('requires an explicit persisted grant before suggesting any action', async () => {
     const f = setup(null);
     expect(await f.reader.load(actor, snapshot)).toBeNull();

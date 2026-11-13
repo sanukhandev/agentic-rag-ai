@@ -1,4 +1,4 @@
-import { catalogV2VersionRef, type CatalogV2Document } from '../../conversation/catalog.js';
+import { catalogV2VersionRef, type CatalogV2Document } from '../catalog/catalog.js';
 import type {
   CandidateActionProposal, ModelCandidate, ProposalValidator, SessionSnapshot, TrustedActor, VerifiedFact,
 } from '../contracts.js';
