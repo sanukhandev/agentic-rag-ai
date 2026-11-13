@@ -8,7 +8,8 @@ for (const name of ['APP_BIND_ADDRESS', 'PUBLIC_ORIGIN']) delete env[name];
 // Dummy values are used only for static interpolation, never containers.
 for (const name of ['POSTGRES_PASSWORD', 'JWT_SECRET', 'CHANNEL_CREDENTIAL_KEY',
   'PII_VAULT_KEY', 'MODEL_GATEWAY_SERVICE_KEY', 'N8N_WEBHOOK_SECRET',
-  'INGESTION_WORKER_SECRET']) env[name] = 'ci-static-placeholder-not-a-secret';
+  'INGESTION_WORKER_SECRET', 'CHAT_STREAM_INTERNAL_SECRET',
+  'READ_SCOPE_SECRET', 'EVIDENCE_SIGNING_KEY']) env[name] = 'ci-static-placeholder-not-a-secret';
 const run = spawnSync(docker, ['compose', '--env-file', '.env.example', '-f', 'docker-compose.yml', '--profile', 'quote', 'config', '--format', 'json'], {
   cwd: root, env, shell: process.platform === 'win32', encoding: 'utf8',
 });
@@ -28,13 +29,15 @@ for (const [name, port] of Object.entries({ postgres: '5432', redis: '6379', n8n
 for (const name of ['postgres', 'redis', 'n8n', 'api', 'ingestion']) if (!services[name].volumes?.length) throw new Error('Missing persistent volumes: '+name);
 if (!JSON.stringify(services.postgres.healthcheck?.test).includes('-h 127.0.0.1')) throw new Error('PostgreSQL TCP readiness is required.');
 if (!services.api.healthcheck || !services.nginx.healthcheck || !services['model-gateway'].healthcheck) throw new Error('Missing health checks.');
-if (services.api.environment.CHAT_MODEL_PROVIDER !== 'python-gpt'
-  || services.api.environment.CONVERSATION_ENGINE_V2_ENABLED !== 'true'
-  || services.api.environment.CONVERSATION_ENGINE_V2_REQUIRED !== 'true'
-  || services.api.environment.PYTHON_MODEL_URL !== 'http://model-gateway:8088') throw new Error('GPT-first API wiring invalid.');
+if (services.api.environment.PYTHON_MODEL_URL !== 'http://model-gateway:8088'
+  || !services.api.environment.READ_SCOPE_SECRET
+  || !services.api.environment.EVIDENCE_SIGNING_KEY
+  || 'CONVERSATION_ENGINE_V2_ENABLED' in services.api.environment) {
+  throw new Error('Clean GPT-first API wiring invalid.');
+}
 if (services['model-gateway'].environment.NODE_TOOL_GATEWAY_URL !== 'http://api:4000') throw new Error('Trusted Node tool gateway missing.');
 if (services.n8n.environment.N8N_PATH !== '/n8n/' || services['event-worker'].environment.N8N_INTERNAL_URL !== 'http://n8n:5678') throw new Error('n8n proxy path mismatch.');
-if (services.api.environment.V2_LEAD_WORKFLOW_READY !== 'false' && services.api.environment.V2_LEAD_WORKFLOW_READY !== '') throw new Error('Compose must not enable the Salesforce Lead workflow by default.');
+if (Object.keys(services.api.environment).some(key => key.startsWith('V2_'))) throw new Error('Retired V2 feature flags must not be deployed.');
 if (services.web.build.args.NEXT_PUBLIC_API_URL !== '/' || services.admin.build.args.ADMIN_BASE_HREF !== '/admin/') throw new Error('Proxy UI path mismatch.');
 for (const name of ['quote-pdf','mock-payments']) if (!services[name]?.profiles?.includes('quote')) throw new Error('Mock provider must be opt-in: '+name);
 console.log('Single-file Nginx port-80 Compose verified; private services and volumes preserved.');
