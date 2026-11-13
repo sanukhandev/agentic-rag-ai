@@ -22,8 +22,10 @@ from .reliability import BudgetExceeded, CircuitBreaker, QueueAdmission, QueueOv
 from .v2_contracts import AgentTurnResultV2, TurnEnvelopeV2
 from .p4_contracts import P4TurnEnvelope, P4TurnResult
 from .p4_graph import P4LangGraphAgent, HttpP4ToolGateway, P4GatewayError
+from .grounding import router as conversation_grounding_router
 
 app = FastAPI(title="Private Conversation Model Gateway", docs_url=None, redoc_url=None, openapi_url=None)
+app.include_router(conversation_grounding_router)
 _max_concurrency = max(1, min(4, int(os.getenv("MODEL_MAX_CONCURRENCY", "2"))))
 _admission = QueueAdmission(_max_concurrency, max(0, int(os.getenv("MODEL_MAX_QUEUE_DEPTH", "4"))))
 _pacing_lock = asyncio.Lock()
