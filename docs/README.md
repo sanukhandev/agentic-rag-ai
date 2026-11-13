@@ -19,7 +19,7 @@
 See [AGENTS.md](../AGENTS.md) for mandatory engineering rules and [readme.md](../readme.md) for the application overview.
 
 ## Terminology
-- **Agent:** application-wide isolation owner (\`agent_id\`), with configured Foundry agent/version, persona, private knowledge, tools, catalogs and workflows.
+- **Agent:** application-wide isolation owner (`agent_id`), with configured Foundry agent/version, persona, private knowledge, tools, catalogs and workflows.
 - **Ticket:** durable customer conversation, subject/intent, structured facts, private documents, transcript, action history, derived summary and explicit closure.
 - **Intent:** model-inferred published business goal, not authorization.
 - **Requirement:** typed conditional information/approval/document/prerequisite applied to intent or operation.
@@ -29,4 +29,4 @@ See [AGENTS.md](../AGENTS.md) for mandatory engineering rules and [readme.md](..
 - **SSE:** one-way event notification; PostgreSQL event log is authoritative, Redis accelerates delivery.
 
 ## Design boundaries
-No customer-facing web/Bing tool. Foundry IQ via **one** Node-scoped \`search_knowledge\` path; no unmediated alternate search route. PostgreSQL retains business truth and all action outcomes. Read-only source retrieval and AI summaries are not CRM success or consent. Docs never authorize a destructive database reset or dropping historical customer data without explicit POC data disposal/backup.
+No customer-facing web/Bing tool. Foundry IQ via **one** Node-scoped `search_knowledge` path; no unmediated alternate search route. PostgreSQL retains business truth and all action outcomes. Read-only source retrieval and AI summaries are not CRM success or consent. Docs never authorize a destructive database reset or dropping historical customer data without explicit POC data disposal/backup.
