@@ -6,7 +6,7 @@ import { validateCatalogV2 } from './conversation-core/catalog/catalog.js';
 import { MemoryStore } from './store-memory.js';
 
 describe('N8n document event routing', () => {
-  it.each(['queued', 'processing'] as const)('routes a V2 OCR job through the pinned V2 workflow binding while %s', async (status) => {
+  it.each(['queued', 'processing'] as const)('routes a catalog OCR job through the pinned published workflow binding while %s', async (status) => {
     const tenantId = '00000000-0000-4000-8000-000000000001';
     const documentId = '00000000-0000-4000-8000-000000000002';
     const catalogVersionRef = 'anc:r7:' + 'a'.repeat(64);
@@ -24,11 +24,11 @@ describe('N8n document event routing', () => {
     expect(route).toEqual({ workflowKey: 'anc.document.ocr.extract', providerType: 'node', webhookPath: 'anc-test-document-ocr-wf-1', n8nWorkflowId: 'DOC01DocumentProcessing', payloadContract: 'anc-document-ocr-v1' });
   });
 
-  it('delegates an enabled remote V2 action to the API PII boundary and records its normalized result', async () => {
+  it('delegates an enabled remote published action to the API PII boundary and records its normalized result', async () => {
     const store = new MemoryStore();
     const tenant = await store.createTenant({ name: 'Synthetic Remote Tenant', slug: `remote-${randomUUID()}` });
     const session = await store.createSession(tenant.id);
-    const parsed = validateCatalogV2(JSON.parse(readFileSync(new URL('./fixtures/ancfz-catalog-v2-seven-stage.json', import.meta.url), 'utf8')));
+    const parsed = validateCatalogV2(JSON.parse(readFileSync(new URL('./fixtures/catalog-reference-seven-stage.json', import.meta.url), 'utf8')));
     if (!parsed.ok || !parsed.document) throw new Error('fixture invalid');
     const version = await store.createIntentCatalogV2Version({ tenantId: tenant.id, status: 'draft', sourceFileName: 'fixture', sourceHash: 'remote-event-test', parserVersion: 'test', catalog: parsed.document, catalogVersionRef: 'anc:v2:' + 'c'.repeat(64) });
     await store.publishIntentCatalogV2Version(tenant.id, version.id);
