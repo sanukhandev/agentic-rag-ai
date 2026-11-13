@@ -9,7 +9,7 @@ describe('Postgres V2 intent update NULL-safe confirmed-goal guard (isolated uni
     const now = new Date().toISOString();
     const document: UserIntentDocument = {
       id: randomUUID(), tenantId: randomUUID(), sessionId: randomUUID(),
-      opportunityId: null, catalogSource: 'v2', catalogVersionRef: 'v2-catalog-version-123456',
+      opportunityId: null, catalogSource: 'published', catalogVersionRef: 'v2-catalog-version-123456',
       personaVersionId: randomUUID(), businessGoalKey: null, turnIntentKey: null,
       currentStageKey: null, stageRevision: 0, goalConfirmed: false, goalConfirmation: null,
       verifiedFacts: {}, pendingRequirementKey: null, lastQuestion: null,
@@ -19,7 +19,7 @@ describe('Postgres V2 intent update NULL-safe confirmed-goal guard (isolated uni
     };
     const row = {
       id: document.id, tenant_id: document.tenantId, session_id: document.sessionId,
-      opportunity_id: null, catalog_source: 'v2', catalog_version_ref: document.catalogVersionRef,
+      opportunity_id: null, catalog_source: 'published', catalog_version_ref: document.catalogVersionRef,
       persona_version_id: document.personaVersionId, business_goal_key: null, turn_intent_key: null,
       current_stage_key: null, stage_revision: 0, goal_confirmed: false, goal_confirmation: null,
       verified_facts: {}, pending_requirement_key: null, last_question: null,
@@ -49,7 +49,7 @@ describe('Postgres V2 intent update NULL-safe confirmed-goal guard (isolated uni
     const now = new Date().toISOString();
     const document: UserIntentDocument = {
       id: randomUUID(), tenantId: randomUUID(), sessionId: randomUUID(),
-      opportunityId: randomUUID(), catalogSource: 'v2', catalogVersionRef: 'v2-version-ref',
+      opportunityId: randomUUID(), catalogSource: 'published', catalogVersionRef: 'v2-version-ref',
       personaVersionId: randomUUID(), businessGoalKey: 'anc.company_formation',
       turnIntentKey: 'formation', currentStageKey: 'lead_generation', stageRevision: 1,
       goalConfirmed: true, goalConfirmation: {
