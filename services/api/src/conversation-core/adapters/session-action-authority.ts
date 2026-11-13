@@ -1,4 +1,4 @@
-import { catalogV2VersionRef } from '../../conversation/catalog.js';
+import { catalogV2VersionRef } from '../catalog/catalog.js';
 import type { Store } from '../../types.js';
 import type { SessionSnapshot, TrustedActor } from '../contracts.js';
 import type { SqlPool } from './postgres-repository.js';
