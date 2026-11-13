@@ -5,19 +5,19 @@ from unittest.mock import patch, Mock
 
 try:
     from openpyxl import Workbook
-    from ingestion.catalog_v2 import CatalogV2ParseError, REQUIRED_SHEETS, parse_catalog_v2
-    from ingestion.worker import process_job, v2_catalog_result_payload
+    from ingestion.business_catalog import BusinessCatalogParseError, REQUIRED_SHEETS, parse_business_catalog
+    from ingestion.worker import process_job, business_catalog_result_payload
 except ModuleNotFoundError:  # pragma: no cover - environment dependency gate
     Workbook = None
 
 
-class CatalogV2Tests(unittest.TestCase):
+class BusinessCatalogTests(unittest.TestCase):
     def setUp(self) -> None:
         if Workbook is None:
             self.skipTest("openpyxl is not installed")
 
     def workbook(self, directory: str) -> Path:
-        path = Path(directory) / "catalog-v2.xlsx"
+        path = Path(directory) / "catalog-published.xlsx"
         workbook = Workbook()
         workbook.active.title = "README"
         headers = {
@@ -40,21 +40,21 @@ class CatalogV2Tests(unittest.TestCase):
         for name in REQUIRED_SHEETS:
             sheet = workbook[name] if name == "README" else workbook.create_sheet(name)
             sheet.append(headers[name])
-        workbook["CatalogManifest"].append([2, "ancfz", "ancfz", 1, "ancfz-v2"])
+        workbook["CatalogManifest"].append([2, "ancfz", "ancfz", 1, "ancfz-published"])
         workbook.save(path)
         return path
 
     def test_valid_workbook_is_hash_bound_and_lossless(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            parsed = parse_catalog_v2(self.workbook(directory), "ancfz")
+            parsed = parse_business_catalog(self.workbook(directory), "ancfz")
             self.assertEqual(parsed["schemaVersion"], 2)
             self.assertEqual(parsed["manifest"]["catalogKey"], "ancfz")
             self.assertEqual(len(parsed["sourceHash"]), 64)
 
-    def test_v2_payload_matches_node_required_catalog_envelope(self) -> None:
+    def test_published_payload_matches_node_required_catalog_envelope(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            parsed = parse_catalog_v2(self.workbook(directory), "ancfz")
-            payload = v2_catalog_result_payload(parsed)
+            parsed = parse_business_catalog(self.workbook(directory), "ancfz")
+            payload = business_catalog_result_payload(parsed)
             self.assertEqual(set(payload), {"sourceHash", "parserVersion", "catalog"})
             self.assertEqual(set(payload["catalog"]), {"schemaVersion", "manifest", "sheets"})
             self.assertEqual(payload["catalog"]["schemaVersion"], 2)
@@ -62,11 +62,11 @@ class CatalogV2Tests(unittest.TestCase):
             self.assertEqual(payload["sourceHash"], parsed["sourceHash"])
             self.assertEqual(payload["parserVersion"], parsed["parserVersion"])
 
-    def test_worker_posts_valid_v2_envelope_without_changing_v1_contract(self) -> None:
+    def test_worker_posts_valid_published_envelope_without_changing_v1_contract(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             workbook_content = self.workbook(directory).read_bytes()
             with patch("ingestion.worker.fetch_job_input", return_value=(
-                "catalog-v2.xlsx", "application/vnd.agentic.intent-catalog+excel", workbook_content
+                "catalog-published.xlsx", "application/vnd.agentic.intent-catalog+excel", workbook_content
             )), patch("ingestion.worker.submit_catalog_result", return_value={"job": {"status": "completed"}}) as submit:
                 result = process_job(
                     "http://api:4000", "test-job", "test-secret",
@@ -87,11 +87,11 @@ class CatalogV2Tests(unittest.TestCase):
             workbook["CatalogManifest"]["A2"] = 1
             workbook.create_sheet("Intents")
             workbook.save(path)
-            with self.assertRaises(CatalogV2ParseError):
-                parse_catalog_v2(path)
+            with self.assertRaises(BusinessCatalogParseError):
+                parse_business_catalog(path)
             self.workbook(directory)
-            with self.assertRaises(CatalogV2ParseError) as error:
-                parse_catalog_v2(path, "other-tenant")
+            with self.assertRaises(BusinessCatalogParseError) as error:
+                parse_business_catalog(path, "other-tenant")
             self.assertEqual(error.exception.code, "TENANT_SCOPE_MISMATCH")
 
     def test_rejects_formula_and_bad_json_array(self) -> None:
@@ -100,15 +100,15 @@ class CatalogV2Tests(unittest.TestCase):
             workbook = __import__("openpyxl").load_workbook(path)
             workbook["BusinessStages"].append(["ancfz", "lead_generation", 1, "not-json", "evidence", True])
             workbook.save(path)
-            with self.assertRaises(CatalogV2ParseError) as error:
-                parse_catalog_v2(path)
+            with self.assertRaises(BusinessCatalogParseError) as error:
+                parse_business_catalog(path)
             self.assertIn(error.exception.code, {"INVALID_JSON_ARRAY", "FORMULA_NOT_ALLOWED"})
             self.workbook(directory)
             workbook = __import__("openpyxl").load_workbook(path)
             workbook["BusinessStages"]["D2"] = "=SUM(1,1)"
             workbook.save(path)
-            with self.assertRaises(CatalogV2ParseError) as error:
-                parse_catalog_v2(path)
+            with self.assertRaises(BusinessCatalogParseError) as error:
+                parse_business_catalog(path)
             self.assertEqual(error.exception.code, "FORMULA_NOT_ALLOWED")
 
 

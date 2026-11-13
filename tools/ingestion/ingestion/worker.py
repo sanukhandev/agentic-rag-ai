@@ -12,7 +12,7 @@ from typing import Any
 import requests
 
 from .intent_catalog import parse_intent_catalog
-from .catalog_v2 import parse_catalog_v2
+from .business_catalog import parse_business_catalog
 from .pipeline import MAX_BYTES, MAX_ARCHIVE_RESULT_PAYLOAD_BYTES, IngestedSource, ingest_archive_members, ingest_file, ingest_url
 from .document_ocr import document_summary, extract_document_text
 from .staging import LocalStaging
@@ -171,10 +171,10 @@ def submit_result(api_base: str, job_id: str, worker_secret: str, source: Ingest
     return body
 
 
-def v2_catalog_result_payload(parsed: dict[str, Any]) -> dict[str, Any]:
-    """Wrap the strict V2 parser output in the Node ingestion endpoint contract.
+def business_catalog_result_payload(parsed: dict[str, Any]) -> dict[str, Any]:
+    """Wrap the strict published-catalog parser output in the Node ingestion endpoint contract.
 
-    Unlike the legacy V1 parser, the V2 parser returns schemaVersion, manifest
+    Unlike the legacy V1 parser, the published-catalog parser returns schemaVersion, manifest
     and sheets at the top level alongside its file provenance. The worker must
     send an envelope with a required 'catalog' field; otherwise Node rejects it.
     """
@@ -353,11 +353,11 @@ def process_job(
                     from openpyxl import load_workbook
                     workbook = load_workbook(staged, read_only=True, data_only=False, keep_links=False)
                     try:
-                        is_v2 = "CatalogManifest" in workbook.sheetnames
+                        has_manifest = "CatalogManifest" in workbook.sheetnames
                     finally:
                         workbook.close()
-                    if is_v2:
-                        parsed_catalog = v2_catalog_result_payload(parse_catalog_v2(staged))
+                    if has_manifest:
+                        parsed_catalog = business_catalog_result_payload(parse_business_catalog(staged))
                     else:
                         parsed_catalog = parse_intent_catalog(staged)
                     return submit_catalog_result(api_base, job_id, worker_secret, parsed_catalog, client)
