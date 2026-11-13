@@ -59,7 +59,9 @@ try {
   }
   const fk = await pool.query("SELECT conname FROM pg_constraint WHERE conname LIKE '%_tenant_%_fk'");
   for (const name of ['action_requests_tenant_session_fk','crm_leads_tenant_action_fk',
-    'supporting_documents_tenant_lead_fk','document_jobs_tenant_document_fk']) {
+    'supporting_documents_tenant_lead_fk','document_jobs_tenant_document_fk',
+    'quotes_tenant_package_fk','invoices_tenant_quote_fk','contracts_tenant_invoice_fk',
+    'crm_accounts_tenant_lead_fk','lead_associations_tenant_action_fk']) {
     assert.ok(fk.rows.some(r => r.conname === name), 'Missing cross-tenant FK: '+name);
   }
 
@@ -99,6 +101,21 @@ try {
       "INSERT INTO action_requests(id,tenant_id,session_id,workflow_key,idempotency_key,state,opaque_reference) VALUES($1,$2,$3,'crm.lead.create','ci-unique','approved','opaque')",
       [actionId,a,session],
     );
+    const offerId = randomUUID(), quoteId = randomUUID(), opportunity = randomUUID();
+    await client.query(
+      "INSERT INTO package_offerings(id,tenant_id,package_key,name) VALUES($1,$2,'ci-synthetic','CI Test Package')",
+      [offerId,a],
+    );
+    await assertRejected(client,
+      "INSERT INTO quotes(id,tenant_id,opportunity_id,package_offering_id,amount_minor,currency,valid_until,status) VALUES($1,$2,$3,$4,100,'AED',now()+interval '1 day','draft')",
+      [randomUUID(),b,opportunity,offerId], '23503');
+    await client.query(
+      "INSERT INTO quotes(id,tenant_id,opportunity_id,package_offering_id,amount_minor,currency,valid_until,status) VALUES($1,$2,$3,$4,100,'AED',now()+interval '1 day','draft')",
+      [quoteId,a,opportunity,offerId],
+    );
+    await assertRejected(client,
+      "INSERT INTO invoices(id,tenant_id,opportunity_id,quote_id,amount_minor,currency,status,provider) VALUES($1,$2,$3,$4,100,'AED','draft','ci-provider')",
+      [randomUUID(),b,opportunity,quoteId], '23503');
     await client.query(
       "INSERT INTO integration_remote_objects(id,tenant_id,connection_id,resource_type,external_id,action_id) VALUES($1,$2,$3,'account','remote-123',$4)",
       [randomUUID(),a,connection,actionId],
