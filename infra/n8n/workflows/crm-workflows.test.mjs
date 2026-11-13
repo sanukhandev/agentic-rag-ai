@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 const files = ['CRM01ContactLookup.json', 'CRM02ContactUpsert.json', 'CRM03SummarySync.json', 'DOC01DocumentProcessing.json', ...Array.from({ length: 13 }, (_, index) => `INTENTancfzint${String(index + 1).padStart(2, '0')}.json`)];
 const claimFiles = ['01-lead-capture-and-crm.json', '03-anc-lead-capture-wf-1.json', ...files.filter((file) => file !== 'DOC01DocumentProcessing.json')];
 
-test('CRM v2 workflow exports are tenant-neutral and server-authenticated', async () => {
+test('CRM workflow exports are tenant-neutral and server-authenticated', async () => {
   for (const file of files) {
     const text = await readFile(new URL(`./${file}`, import.meta.url), 'utf8');
     const workflow = JSON.parse(text);
