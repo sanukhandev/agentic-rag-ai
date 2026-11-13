@@ -34,6 +34,6 @@ PostgreSQL: authoritative agents, configurations, accounts, messages, tickets, f
 - Preserve privacy and independently verify citations, prices, consent and provider outcomes.
 
 ## Documentation
-[Engineering instructions](AGENTS.md) · [Canonical index](docs/README.md) · [Product](docs/01-product-requirements.md) · [System](docs/02-system-architecture.md) · [Gateway](docs/03-conversation-engine.md) · [Agent memory](docs/04-tenant-persona-memory.md) · [Knowledge](docs/05-rag-knowledge.md) · [Intents/actions](docs/06-intents-actions-workflows.md) · [Security](docs/07-security-and-validation.md) · [Acceptance](docs/08-testing-and-acceptance.md) · [Rebuild plan](docs/09-migration-plan.md).
+[Engineering instructions](AGENTS.md) · [Canonical index](docs/README.md) · [Product](docs/01-product-requirements.md) · [System](docs/02-system-architecture.md) · [Gateway](docs/03-conversation-engine.md) · [Agent memory](docs/04-agent-persona-memory.md) · [Knowledge](docs/05-rag-knowledge.md) · [Intents/actions](docs/06-intents-actions-workflows.md) · [Security](docs/07-security-and-validation.md) · [Acceptance](docs/08-testing-and-acceptance.md) · [Rebuild plan](docs/09-migration-plan.md).
 
 Current Docker/runtime instructions remain in [local Compose](docs/local-docker-compose.md); current database inventory is in [database review](docs/database-bcnf-review.md). They describe the **existing** system until rewritten.
