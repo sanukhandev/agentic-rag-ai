@@ -68,7 +68,7 @@ const engine = createP5CandidateEngine({
 });
 const sessionTtlMs = Number(env.CHAT_SESSION_TTL_MS ?? 600_000);
 const { app } = createConversationApp({
-  store, cache, embedding, vault, nodeEnv, origin, sessionTtlMs,
+  store, cache, vault, nodeEnv, origin, sessionTtlMs,
   customerTurn: { pool, engine, sessionTtlMs },
   jwtSecret: env.JWT_SECRET!,
   vaultSecret: env.PII_VAULT_KEY!,

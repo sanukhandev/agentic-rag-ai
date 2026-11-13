@@ -1,8 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
-import type { Chunk, Source, Store } from './types.js';
+import type { Chunk, Source, Store, Citation } from './types.js';
 import { contentHash } from './store-memory.js';
 import type { EmbeddingProvider } from './embedding.js';
-import type { ModelEvidence } from './model.js';
+export type KnowledgeEvidence = { citation: Citation; content: string };
 import { normalizeFullTextQuery } from './search-query.js';
 
 export const EMBEDDING_MODEL = 'deterministic-demo-8d-v1';
@@ -192,7 +192,7 @@ export const retrieveApprovedKnowledge = async (
   limit = 4,
   queryText = normalizeFullTextQuery(query),
   relevanceQuery = query,
-): Promise<ModelEvidence[]> => {
+): Promise<KnowledgeEvidence[]> => {
   const deterministicEmbeddings = embedding.model.startsWith('deterministic-');
   const strictLocalRelevance = deterministicEmbeddings && store.constructor.name === 'PostgresStore';
   const rankRelevanceQuery = strictLocalRelevance ? relevanceQuery : query;

@@ -4,11 +4,8 @@ import { z } from 'zod';
 import { AuthService, authMiddleware, type AuthedRequest } from '../../auth.js';
 import { ChannelSecretVault } from '../../channel-auth.js';
 import type { CacheStore } from '../../cache.js';
-import type { EmbeddingProvider } from '../../embedding.js';
 import { HttpError } from '../../http/errors.js';
 import { PrivateDocumentStorage } from '../../document-intake.js';
-import { TokenVault } from '../../privacy.js';
-import type { ChatModel } from '../../model.js';
 import type { Store } from '../../types.js';
 import { registerAuthRoutes } from '../../routes/auth.js';
 import { registerAdminRoutes, type TelemetrySnapshot } from '../../routes/admin.js';
@@ -42,7 +39,6 @@ const publicUser = (user: { id: string; email: string; role: string; tenantId: s
 export interface ConversationAppDependencies {
   readonly store: Store;
   readonly cache: CacheStore;
-  readonly embedding: EmbeddingProvider;
   readonly vault: PostgresScopedPrivacyVault;
   readonly customerTurn: Omit<CustomerTurnRouteDependencies, 'store' | 'vault' | 'nodeEnv' | 'localOrigin'>;
   readonly nodeEnv: string;
@@ -114,17 +110,13 @@ export function createConversationApp(deps: ConversationAppDependencies): { app:
     });
     next();
   });
-  const disabledPreview: ChatModel = {
-    async draft() { throw new Error('Use authenticated conversation preview; deterministic preview is retired'); },
-  };
   // The administrative router is temporary infrastructure for persona,
   // catalog and source management; it never owns public conversation turns.
   const channelVault = new ChannelSecretVault(deps.channelSecret);
   registerAdminRoutes(app, {
-    store, auth, model: disabledPreview, embedding: deps.embedding, protectedApi,
+    store, auth, protectedApi,
     documentStorage: new PrivateDocumentStorage(deps.documentStorageRoot),
     channelVault, ingestionWorkerSecret: deps.ingestionWorkerSecret,
-    tokenVault: new TokenVault(deps.vaultSecret),
     cachePing: () => cache.ping(),
     invalidateTenantCache: tenantId => cache.invalidate(`agentic:tenant:${encodeURIComponent(tenantId)}:`),
     modelConfigured: true, embeddingConfigured: true,

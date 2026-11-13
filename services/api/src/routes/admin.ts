@@ -2,7 +2,6 @@ import type { Application, Request } from 'express';
 import { randomUUID } from 'node:crypto';
 import { requireRoles, type AuthService, type AuthedRequest } from '../auth.js';
 import { type ChannelSecretVault, generateChannelApiKey, generateChannelKeyId, generateChannelSecret } from '../channel-auth.js';
-import { type EmbeddingProvider } from '../embedding.js';
 import { HttpError, parse } from '../http/errors.js';
 import {
   channelCredentialSchema,
@@ -12,18 +11,13 @@ import {
   featureSchema,
   memberRoleSchema,
   memberSchema,
-  personaPreviewSchema,
   personaSchema,
   retentionSchema,
   tenantSchema,
   tenantStatusSchema,
 } from '../http/schemas.js';
-import { hasConflictingEvidence, presentKnowledgeText, rankChunksWithVector } from '../knowledge.js';
-import { conversationalIntent, conversationalReply, detectedLanguage, hasSufficientEvidence, isPermittedLanguage, naturalAbstention, permittedLanguageReply, validateCitations, type ChatModel, type ModelDraft } from '../model.js';
-import { assertKnownTokens, maskPii, rehydrateForSession, saveTokens, TokenVault } from '../privacy.js';
 import { type PrivateDocumentStorage } from '../document-intake.js';
 import type { ChannelCredential, Store, TenantStatus } from '../types.js';
-import { newConversationState } from '../conversation-state.js';
 
 export type TelemetrySnapshot = {
   requests: number;
@@ -46,13 +40,10 @@ export type TelemetrySnapshot = {
 export type AdminRouteDependencies = {
   store: Store;
   auth: AuthService;
-  model: ChatModel;
-  embedding: EmbeddingProvider;
   protectedApi: import('express').RequestHandler;
   documentStorage: PrivateDocumentStorage;
   channelVault: ChannelSecretVault;
   ingestionWorkerSecret: string;
-  tokenVault: TokenVault;
   cachePing: () => Promise<boolean>;
   invalidateTenantCache?: (tenantId: string) => Promise<void>;
   modelConfigured: boolean;
@@ -70,7 +61,7 @@ export type AdminRouteDependencies = {
 };
 
 export const registerAdminRoutes = (app: Application, dependencies: AdminRouteDependencies): void => {
-  const { store, auth, model, embedding, protectedApi, documentStorage, channelVault, ingestionWorkerSecret, tokenVault, getAuth, routeParam, tenantForRequest, activeTenant, publicUser, publicChannelCredential, observedTelemetry, newTelemetry, telemetry, tenantTelemetry, invalidateTenantCache } = dependencies;
+  const { store, auth, protectedApi, documentStorage, channelVault, ingestionWorkerSecret, getAuth, routeParam, tenantForRequest, activeTenant, publicUser, publicChannelCredential, observedTelemetry, newTelemetry, telemetry, tenantTelemetry, invalidateTenantCache } = dependencies;
 
   app.post('/api/v1/admin/tenants', protectedApi, requireRoles('platform_admin'), (req, res, next) => {
     void (async () => {
@@ -124,9 +115,4 @@ export const registerAdminRoutes = (app: Application, dependencies: AdminRouteDe
   app.post('/api/v1/admin/persona/drafts', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => { try { const tenantId = await tenantForRequest(store, req); const input = parse(personaSchema, req.body); res.status(201).json({ version: await store.createPersonaVersion({ tenantId, ...input, contextWindowMessages: input.contextWindowMessages ?? 10, voiceName: input.voiceName ?? '', voiceLanguage: input.voiceLanguage ?? 'en-US', voiceRate: input.voiceRate ?? 1, voicePitch: input.voicePitch ?? 1, voiceVolume: input.voiceVolume ?? 1, status: 'draft' }) }); } catch (error) { next(error); } });
   app.get('/api/v1/admin/persona/versions', protectedApi, async (req, res, next) => { try { res.json({ items: await store.listPersonaVersions(await tenantForRequest(store, req)) }); } catch (error) { next(error); } });
   app.post('/api/v1/admin/persona/versions/:id/publish', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => { try { const tenantId = await tenantForRequest(store, req); const version = await store.publishPersonaVersion(tenantId, routeParam(req, 'id')); if (!version) throw new HttpError(404, 'PERSONA_VERSION_NOT_FOUND', 'Persona version not found.'); await invalidateTenantCache?.(tenantId); await store.addAudit({ id: randomUUID(), tenantId, actorId: getAuth(req)?.userId ?? null, eventName: 'persona.published', metadata: { versionId: version.id, version: version.version }, createdAt: new Date().toISOString() }); res.json({ version }); } catch (error) { next(error); } });
-  app.post('/api/v1/admin/persona/preview', protectedApi, requireRoles('tenant_admin'), async (req, res, next) => {
-    try {
-      const tenantId = await tenantForRequest(store, req); const tenant = await activeTenant(store, tenantId); const input = parse(personaPreviewSchema, req.body); const masked = maskPii(input.message); const previewSession = { id: randomUUID(), tenantId, createdAt: new Date().toISOString(), lastActivityAt: new Date().toISOString(), closedAt: null, personaVersionId: null, tokenMap: new Map<string, string>(), conversationState: newConversationState() }; saveTokens(previewSession, masked.tokens, tokenVault); const queryEmbedding = await embedding.embed(masked.masked); const ranked = rankChunksWithVector(masked.masked, await store.searchSearchableChunks(tenantId, 'internal', queryEmbedding, 4), queryEmbedding, 4, embedding.model.startsWith('deterministic-') ? null : 0.8); const evidence = ranked.map(({ source, chunk }) => ({ citation: { sourceId: source.id, versionId: source.versionId, chunkId: chunk.id, title: source.title, locator: chunk.locator }, content: presentKnowledgeText(chunk.content) })).filter((item) => item.content.length > 0); const language = detectedLanguage(masked.masked); const languageAllowed = isPermittedLanguage(masked.masked, input.permittedLanguages); const intent = conversationalIntent(masked.masked); const conversational = intent !== null && (languageAllowed || language === 'ar'); let draft: ModelDraft; if (!languageAllowed && !conversational) draft = { answer: permittedLanguageReply(language, input.permittedLanguages), citationIds: [], proposedIntent: null }; else if (conversational && intent === 'identity') draft = { answer: conversationalReply(intent, input.name, language, tenant.name), citationIds: [], proposedIntent: null }; else if (hasConflictingEvidence(evidence.map((item) => item.content))) draft = { answer: 'The approved sources contain conflicting facts, so I will not choose one without review.', citationIds: [], proposedIntent: null }; else if (conversational && evidence.length === 0) draft = { answer: intent === 'greeting' && language !== 'ar' ? input.greeting : conversationalReply(intent ?? 'identity', input.name, language, tenant.name), citationIds: [], proposedIntent: null }; else draft = await model.draft({ maskedMessage: masked.masked, evidence, personaName: input.name, ownerName: tenant.name, persona: input }); assertKnownTokens(previewSession, draft.answer, tokenVault); const citations = validateCitations(draft, evidence); const grounded = languageAllowed && hasSufficientEvidence(draft.answer, evidence, citations); const safeCitations = grounded ? citations : []; const casualFallback = conversational && (evidence.length === 0 || intent === 'identity'); const answer = !languageAllowed ? draft.answer : casualFallback ? draft.answer : grounded ? draft.answer : naturalAbstention(language, masked.masked); res.json({ preview: { answer: rehydrateForSession(previewSession, answer, tokenVault), grounded, citations: safeCitations, persona: { name: input.name, permittedLanguages: input.permittedLanguages } } });
-    } catch (error) { next(error); }
-  });
 };
