@@ -1,11 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { validateCatalogV2, catalogV2VersionRef } from '../catalog/catalog.js';
+import { validateBusinessCatalog, businessCatalogVersionRef } from '../catalog/catalog.js';
 const fixture = JSON.parse(readFileSync(new URL('../../fixtures/catalog-reference-seven-stage.json', import.meta.url), 'utf8')) as unknown;
-const parsed = validateCatalogV2(fixture);
+const parsed = validateBusinessCatalog(fixture);
 if (!parsed.ok || !parsed.document) throw new Error('Missing reference catalog');
 const reference = parsed.document;
-const ref = catalogV2VersionRef(reference);
+const ref = businessCatalogVersionRef(reference);
 import type { Store } from '../../types.js';
 import type { SessionSnapshot, TrustedActor } from '../contracts.js';
 import type { SqlClient, SqlPool } from '../adapters/postgres-repository.js';
@@ -31,8 +31,8 @@ function setup(grant: Record<string, unknown> | null, sessionRevision = 5) {
   const store = {
     async getTenant() { return { status: 'active' }; },
     async getSession() { return session; },
-    async getIntentCatalogV2Version() { return catalog; },
-  } as unknown as Pick<Store, 'getSession' | 'getTenant' | 'getIntentCatalogV2Version'>;
+    async getBusinessCatalogVersion() { return catalog; },
+  } as unknown as Pick<Store, 'getSession' | 'getTenant' | 'getBusinessCatalogVersion'>;
   const pool = {
     async connect(): Promise<SqlClient> {
       return {

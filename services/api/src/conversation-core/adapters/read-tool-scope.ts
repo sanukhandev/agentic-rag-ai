@@ -4,7 +4,7 @@ import { isAuthorizedReadTool } from '../authorization/read-tool-policy.js';
 import type { ConversationRepository, ReadToolCatalog, ReadToolDefinition, TrustedActor } from '../contracts.js';
 import { NodeReadToolRegistry, type NodeReadToolResult } from '../read-tool-registry.js';
 
-type CatalogReader = Pick<Store, 'getIntentCatalogV2Version'>;
+type CatalogReader = Pick<Store, 'getBusinessCatalogVersion'>;
 interface ScopeClaims {
   v: 1;
   tenantId: string;
@@ -85,7 +85,7 @@ export class ScopedP3ReadTools implements ReadToolCatalog {
       || session.tenantId !== actor.tenantId || session.sessionId !== actor.sessionId
       || session.catalogVersionId !== catalogVersionId) throw new InvalidReadScopeError();
     const published = catalogVersionId === 'unconfigured' ? null
-      : await this.catalogReader.getIntentCatalogV2Version(actor.tenantId, catalogVersionId);
+      : await this.catalogReader.getBusinessCatalogVersion(actor.tenantId, catalogVersionId);
     if (published && (published.id !== catalogVersionId || published.tenantId !== actor.tenantId
       || published.status !== 'published')) throw new InvalidReadScopeError();
     return this.registry.listDefinitions().filter(def => readNames.has(def.name)

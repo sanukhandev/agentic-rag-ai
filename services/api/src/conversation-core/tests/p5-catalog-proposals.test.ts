@@ -1,15 +1,15 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { catalogV2VersionRef, validateCatalogV2, type CatalogV2Document } from '../catalog/catalog.js';
+import { businessCatalogVersionRef, validateBusinessCatalog, type BusinessCatalogDocument } from '../catalog/catalog.js';
 import type { Store } from '../../types.js';
 import type { ModelCandidate, SessionSnapshot, TrustedActor } from '../contracts.js';
 import { P5CatalogAuthorizationError, P5CatalogEnvelopeEnricher, P5PinnedCatalogReader } from '../adapters/p5-catalog.js';
 import { P5ProposalError, P5ProposalValidator, type P5TrustedActionState } from '../adapters/p5-proposal-validator.js';
 
 const fixture = JSON.parse(readFileSync(new URL('../../fixtures/catalog-reference-seven-stage.json', import.meta.url), 'utf8')) as unknown;
-const parsed = validateCatalogV2(fixture);
+const parsed = validateBusinessCatalog(fixture);
 if (!parsed.ok || !parsed.document) throw new Error('Reference catalog is invalid');
-const catalog: CatalogV2Document = parsed.document;
+const catalog: BusinessCatalogDocument = parsed.document;
 const tenantId = 'tenant-alpha';
 const actor: TrustedActor = { tenantId, sessionId: 'session-one', principalId: 'a'.repeat(64), role: 'customer' };
 const goal = 'anc.company_formation';
@@ -26,12 +26,12 @@ const base: ModelCandidate = {
 function reader(overrides: Partial<{ tenantId: string; id: string; status: 'draft' | 'published'; catalogVersionRef: string }> = {}): P5PinnedCatalogReader {
   const item = {
     id: snapshot.catalogVersionId, tenantId, status: 'published' as const,
-    catalogVersionRef: catalogV2VersionRef(catalog), catalog,
+    catalogVersionRef: businessCatalogVersionRef(catalog), catalog,
     ...overrides,
   };
   return new P5PinnedCatalogReader({
-    async getIntentCatalogV2Version() { return item; },
-  } as unknown as Pick<Store, 'getIntentCatalogV2Version'>);
+    async getBusinessCatalogVersion() { return item; },
+  } as unknown as Pick<Store, 'getBusinessCatalogVersion'>);
 }
 function candidateFact(key: string, value: string, supportingTurnId = 'customer-turn-1'): ModelCandidate {
   return { ...base, proposedFacts: [{ key, value, supportingTurnId }] };
@@ -42,7 +42,7 @@ function actionState(overrides: Partial<P5TrustedActionState> = {}): P5TrustedAc
     tenantId, sessionId: actor.sessionId, catalogVersionId: snapshot.catalogVersionId,
     goalKey: goal, stageKey: 'lead_generation', confirmedGoal: true,
     customerAuthorized: true, consentGranted: true,
-    consentScope: catalogV2VersionRef(catalog) + ':lead.create',
+    consentScope: businessCatalogVersionRef(catalog) + ':lead.create',
     verifiedRequirementKeys: ['lead_contact_name', 'lead_contact_channel', 'lead_crm_consent', 'lead_action_confirmation'],
     verifiedArguments: { lead_contact_name: 'Mina', lead_contact_channel: '[EMAIL_1]' },
     ...overrides,

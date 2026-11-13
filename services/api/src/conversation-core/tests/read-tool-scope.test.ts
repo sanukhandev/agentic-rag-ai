@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { NodeReadToolRegistry } from '../read-tool-registry.js';
 import { InvalidReadScopeError, ScopedP3ReadTools } from '../adapters/read-tool-scope.js';
 import type { ConversationRepository, SessionSnapshot, TrustedActor } from '../contracts.js';
-import type { CatalogV2Document } from '../catalog/catalog.js';
+import type { BusinessCatalogDocument } from '../catalog/catalog.js';
 import type { Store } from '../../types.js';
 
 const actor: TrustedActor = {
@@ -19,7 +19,7 @@ const allowedCatalog = {
     BusinessGoals: [{ businessGoalKey: 'formation', active: true }],
     ToolBindings: [{ toolKey: 'knowledge.search', goalKey: 'formation', enabled: true, sideEffectClass: 'read_only' }],
   },
-} as unknown as CatalogV2Document;
+} as unknown as BusinessCatalogDocument;
 
 function makeFixture() {
   let now = 1700000000000;
@@ -35,12 +35,12 @@ function makeFixture() {
     },
   } as unknown as ConversationRepository;
   const catalogStore = {
-    async getIntentCatalogV2Version(tenantId: string, id: string) {
+    async getBusinessCatalogVersion(tenantId: string, id: string) {
       return tenantId === actor.tenantId && id === reference.catalogVersionId
         ? { id, tenantId, catalog, status: 'published' }
         : null;
     },
-  } as unknown as Pick<Store, 'getIntentCatalogV2Version'>;
+  } as unknown as Pick<Store, 'getBusinessCatalogVersion'>;
   const registry = new NodeReadToolRegistry();
   for (const name of ['search_knowledge', 'get_conversation_summary'] as const) {
     registry.register({
@@ -60,7 +60,7 @@ function makeFixture() {
     setNow(value: number) { now = value; },
     revoke() { revoked = true; },
     changeRevision(value: number) { current = { ...current, revision: value }; },
-    disableKnowledge() { catalog = { ...catalog, sheets: { ...catalog.sheets, ToolBindings: [] } } as CatalogV2Document; },
+    disableKnowledge() { catalog = { ...catalog, sheets: { ...catalog.sheets, ToolBindings: [] } } as BusinessCatalogDocument; },
   };
 }
 
@@ -129,6 +129,6 @@ describe('P3 signed, tenant/catalog/session-revision read scopes', () => {
   it('rejects unreasonably short HMAC secrets', () => {
     const registry = new NodeReadToolRegistry();
     expect(() => new ScopedP3ReadTools('short', {} as ConversationRepository,
-      {} as Pick<Store, 'getIntentCatalogV2Version'>, registry)).toThrow('32 bytes');
+      {} as Pick<Store, 'getBusinessCatalogVersion'>, registry)).toThrow('32 bytes');
   });
 });

@@ -226,7 +226,7 @@ export class N8nEventBridge {
     const action = await this.store.getAction(event.actionId);
     if (!action || action.tenantId !== event.tenantId || !['approved', 'processing'].includes(action.state)) return null;
     if (!action.catalogVersionId) return { workflowKey: action.workflowKey, providerType: 'internal_n8n', webhookPath: action.webhookPath ?? 'lead-capture' };
-    const v2Version = (await this.store.listIntentCatalogV2Versions(action.tenantId)).find(candidate => candidate.status === 'published' && candidate.catalogVersionRef === action.catalogVersionId);
+    const v2Version = (await this.store.listBusinessCatalogVersions(action.tenantId)).find(candidate => candidate.status === 'published' && candidate.catalogVersionRef === action.catalogVersionId);
     const v2Route = v2Version ? resolveWorkflowRoute(v2Version, action.workflowKey) : null;
     if (v2Version) return v2Route ? { workflowKey: v2Route.workflowKey, providerType: v2Route.providerType, webhookPath: v2Route.webhookPath, n8nWorkflowId: v2Route.n8nWorkflowId, payloadContract: v2Route.payloadContract } : null;
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(action.catalogVersionId)) return null;
@@ -241,7 +241,7 @@ export class N8nEventBridge {
     if (!job || job.tenantId !== event.tenantId || !['queued', 'processing'].includes(job.status)) return null;
     const document = await this.store.getSupportingDocument(job.documentId, event.tenantId);
     const v2Version = document?.catalogVersionId
-      ? (await this.store.listIntentCatalogV2Versions(event.tenantId)).find((candidate) => candidate.status === 'published' && candidate.catalogVersionRef === document.catalogVersionId)
+      ? (await this.store.listBusinessCatalogVersions(event.tenantId)).find((candidate) => candidate.status === 'published' && candidate.catalogVersionRef === document.catalogVersionId)
       : null;
     const v2Binding = v2Version?.catalog.sheets.WorkflowBindings.find((candidate) => candidate.workflowKey === job.workflowKey && candidate.enabled);
     if (v2Binding?.webhookPath) return { workflowKey: v2Binding.workflowKey, providerType: v2Binding.providerType, webhookPath: v2Binding.webhookPath, ...(v2Binding.n8nWorkflowId ? { n8nWorkflowId: v2Binding.n8nWorkflowId } : {}), ...(v2Binding.payloadContract ? { payloadContract: v2Binding.payloadContract } : {}) };

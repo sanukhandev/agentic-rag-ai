@@ -1,11 +1,11 @@
-import { catalogV2VersionRef } from '../catalog/catalog.js';
+import { businessCatalogVersionRef } from '../catalog/catalog.js';
 import type { Store } from '../../types.js';
 import type { SessionSnapshot, TrustedActor } from '../contracts.js';
 import type { SqlPool } from './postgres-repository.js';
 import type { SessionAuthorizer } from './session-authorizer.js';
 import type { P5ActionStateReader, P5TrustedActionState } from './p5-proposal-validator.js';
 
-type AuthorityStore = Pick<Store, 'getSession' | 'getTenant' | 'getIntentCatalogV2Version'>;
+type AuthorityStore = Pick<Store, 'getSession' | 'getTenant' | 'getBusinessCatalogVersion'>;
 
 interface GrantRow {
   tenant_id: string;
@@ -42,13 +42,13 @@ export class SessionActionAuthorityReader implements P5ActionStateReader {
     const [tenant, session, catalog] = await Promise.all([
       this.store.getTenant(actor.tenantId),
       this.store.getSession(actor.sessionId),
-      this.store.getIntentCatalogV2Version(actor.tenantId, snapshot.catalogVersionId),
+      this.store.getBusinessCatalogVersion(actor.tenantId, snapshot.catalogVersionId),
     ]);
     if (!tenant || !session || !catalog
       || tenant.status !== 'active' || session.closedAt !== null
       || session.tenantId !== actor.tenantId || session.stateVersion !== snapshot.revision
       || catalog.id !== snapshot.catalogVersionId || catalog.tenantId !== actor.tenantId
-      || catalog.status !== 'published' || catalog.catalogVersionRef !== catalogV2VersionRef(catalog.catalog)) {
+      || catalog.status !== 'published' || catalog.catalogVersionRef !== businessCatalogVersionRef(catalog.catalog)) {
       return null;
     }
     await this.authorizer.assertAuthorized(actor, {

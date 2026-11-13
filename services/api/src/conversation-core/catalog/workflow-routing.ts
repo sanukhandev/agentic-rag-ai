@@ -1,4 +1,4 @@
-import type { IntentCatalogV2Version } from '../../types.js';
+import type { BusinessCatalogVersion } from '../../types.js';
 
 export type WorkflowRoute = {
   workflowKey: string;
@@ -22,7 +22,7 @@ export type DocumentRoute = {
 };
 
 /** A Published workflow is dispatchable only when the published catalog binds every transport identity. */
-export const resolveWorkflowRoute = (version: IntentCatalogV2Version, workflowKey: string): WorkflowRoute | null => {
+export const resolveWorkflowRoute = (version: BusinessCatalogVersion, workflowKey: string): WorkflowRoute | null => {
   const binding = version.status === 'published'
     ? version.catalog.sheets.WorkflowBindings.find(candidate => candidate.workflowKey === workflowKey && candidate.enabled)
     : null;
@@ -32,7 +32,7 @@ export const resolveWorkflowRoute = (version: IntentCatalogV2Version, workflowKe
 
 /** Resolves document route from published catalog ToolBindings, DocumentPolicies, and WorkflowBindings. */
 export const resolveDocumentRoute = (
-  version: IntentCatalogV2Version,
+  version: BusinessCatalogVersion,
   goalKey: string,
 ): DocumentRoute | null => {
   if (version.status !== 'published') return null;

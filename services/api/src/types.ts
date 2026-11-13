@@ -371,7 +371,7 @@ export interface IntentCatalogVersion {
   publishedAt: string | null;
 }
 
-export interface IntentCatalogV2Version {
+export interface BusinessCatalogVersion {
   id: string;
   tenantId: string;
   version: number;
@@ -379,7 +379,7 @@ export interface IntentCatalogV2Version {
   sourceFileName: string;
   sourceHash: string;
   parserVersion: string;
-  catalog: CatalogV2Document;
+  catalog: BusinessCatalogDocument;
   catalogVersionRef: string;
   createdAt: string;
   publishedAt: string | null;
@@ -818,7 +818,7 @@ export interface IntentVocabularyCandidate {
   promotedAt: string | null;
 }
 
-export interface V2OtpChallengeRecord {
+export interface OtpChallengeRecord {
   challengeId: string;
   tenantId: string;
   sessionId: string;
@@ -942,9 +942,9 @@ export interface Store {
   createUser(input: { email: string; passwordHash: string; role: Role; tenantId: string | null }): Promise<User>;
   getUserByEmail(email: string): Promise<User | null>;
   getUser(id: string): Promise<User | null>;
-  createV2OtpChallenge(challenge: V2OtpChallengeRecord): Promise<V2OtpChallengeRecord>;
-  getV2OtpChallenge(tenantId: string, challengeId: string): Promise<V2OtpChallengeRecord | null>;
-  updateV2OtpChallenge(challenge: V2OtpChallengeRecord): Promise<V2OtpChallengeRecord>;
+  createOtpChallenge(challenge: OtpChallengeRecord): Promise<OtpChallengeRecord>;
+  getOtpChallenge(tenantId: string, challengeId: string): Promise<OtpChallengeRecord | null>;
+  updateOtpChallenge(challenge: OtpChallengeRecord): Promise<OtpChallengeRecord>;
   updateUserRole(userId: string, tenantId: string, role: Exclude<Role, 'platform_admin' | 'tenant_admin'>): Promise<User | null>;
   createAuthSession(session: AuthSession): Promise<AuthSession>;
   getAuthSession(tokenHash: string): Promise<AuthSession | null>;
@@ -962,16 +962,16 @@ export interface Store {
   getIntentCatalogVersion(tenantId: string, versionId: string): Promise<IntentCatalogVersion | null>;
   getPublishedIntentCatalog(tenantId: string): Promise<IntentCatalogVersion | null>;
   publishIntentCatalogVersion(tenantId: string, versionId: string): Promise<IntentCatalogVersion | null>;
-  createIntentCatalogV2Version(input: Omit<IntentCatalogV2Version, 'id' | 'version' | 'createdAt' | 'publishedAt'>): Promise<IntentCatalogV2Version>;
-  listIntentCatalogV2Versions(tenantId: string): Promise<IntentCatalogV2Version[]>;
-  getIntentCatalogV2Version(tenantId: string, versionId: string): Promise<IntentCatalogV2Version | null>;
-  publishIntentCatalogV2Version(tenantId: string, versionId: string): Promise<IntentCatalogV2Version | null>;
+  createBusinessCatalogVersion(input: Omit<BusinessCatalogVersion, 'id' | 'version' | 'createdAt' | 'publishedAt'>): Promise<BusinessCatalogVersion>;
+  listBusinessCatalogVersions(tenantId: string): Promise<BusinessCatalogVersion[]>;
+  getBusinessCatalogVersion(tenantId: string, versionId: string): Promise<BusinessCatalogVersion | null>;
+  publishBusinessCatalogVersion(tenantId: string, versionId: string): Promise<BusinessCatalogVersion | null>;
   createUserIntentDocument(document: UserIntentDocument): Promise<UserIntentDocument>;
   getUserIntentDocument(tenantId: string, sessionId: string): Promise<UserIntentDocument | null>;
   updateUserIntentDocument(input: { document: UserIntentDocument; expectedRevision: number }): Promise<UserIntentDocument | null>;
   appendIntentTurn(assessment: IntentTurnAssessment): Promise<IntentTurnAssessment>;
   /** Commit a V2 turn across session, document, assessment and decision audit. */
-  commitV2IntentTurn(input: { session: Session; document: UserIntentDocument; expectedDocumentRevision: number | null; assessment: IntentTurnAssessment; audit?: AuditEvent | null; assistantMessage?: Message; customerMessage?: Message; actionApproval?: ActionRequest }): Promise<{ session: Session; document: UserIntentDocument }>;
+  commitIntentTurn(input: { session: Session; document: UserIntentDocument; expectedDocumentRevision: number | null; assessment: IntentTurnAssessment; audit?: AuditEvent | null; assistantMessage?: Message; customerMessage?: Message; actionApproval?: ActionRequest }): Promise<{ session: Session; document: UserIntentDocument }>;
   listIntentTurns(tenantId: string, sessionId: string, limit?: number): Promise<IntentTurnAssessment[]>;
   createPersonaVersion(input: Omit<PersonaVersion, 'id' | 'version' | 'createdAt' | 'publishedAt'>): Promise<PersonaVersion>;
   listPersonaVersions(tenantId: string): Promise<PersonaVersion[]>;
@@ -1100,4 +1100,4 @@ export interface Store {
   updateVocabularyCandidate(candidate: IntentVocabularyCandidate): Promise<IntentVocabularyCandidate>;
   getTenantStats(tenantId: string): Promise<TenantStats>;
 }
-import type { CatalogV2Document } from './conversation-core/catalog/catalog.js';
+import type { BusinessCatalogDocument } from './conversation-core/catalog/catalog.js';

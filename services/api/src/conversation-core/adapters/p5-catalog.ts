@@ -1,11 +1,11 @@
-import { catalogV2VersionRef, validateCatalogV2, type CatalogV2Document } from '../catalog/catalog.js';
+import { businessCatalogVersionRef, validateBusinessCatalog, type BusinessCatalogDocument } from '../catalog/catalog.js';
 import type { Store } from '../../types.js';
 import { sanitizeKnowledgeText } from '../../privacy.js';
 import type { ModelEnvelopeEnricher } from '../turn-engine.js';
 import type { ModelTurnEnvelope, P5CatalogProjection, SessionSnapshot, TrustedActor } from '../contracts.js';
 import type { P5ActionStateReader } from './p5-proposal-validator.js';
 
-type CatalogStore = Pick<Store, 'getIntentCatalogV2Version'>;
+type CatalogStore = Pick<Store, 'getBusinessCatalogVersion'>;
 
 export class P5CatalogAuthorizationError extends Error {
   constructor() {
@@ -17,18 +17,18 @@ export class P5CatalogAuthorizationError extends Error {
 export class P5PinnedCatalogReader {
   constructor(private readonly store: CatalogStore) {}
 
-  async load(actor: TrustedActor, snapshot: SessionSnapshot): Promise<CatalogV2Document> {
+  async load(actor: TrustedActor, snapshot: SessionSnapshot): Promise<BusinessCatalogDocument> {
     if (actor.role !== 'customer' || actor.tenantId !== snapshot.tenantId
       || actor.sessionId !== snapshot.sessionId || actor.principalId !== snapshot.ownerPrincipalId
       || !snapshot.catalogVersionId || snapshot.catalogVersionId === 'unconfigured') {
       throw new P5CatalogAuthorizationError();
     }
-    const row = await this.store.getIntentCatalogV2Version(actor.tenantId, snapshot.catalogVersionId);
+    const row = await this.store.getBusinessCatalogVersion(actor.tenantId, snapshot.catalogVersionId);
     if (!row || row.tenantId !== actor.tenantId || row.id !== snapshot.catalogVersionId
-      || row.status !== 'published' || row.catalogVersionRef !== catalogV2VersionRef(row.catalog)) {
+      || row.status !== 'published' || row.catalogVersionRef !== businessCatalogVersionRef(row.catalog)) {
       throw new P5CatalogAuthorizationError();
     }
-    const checked = validateCatalogV2(row.catalog);
+    const checked = validateBusinessCatalog(row.catalog);
     if (!checked.ok || !checked.document) throw new P5CatalogAuthorizationError();
     const active = checked.document.sheets.BusinessGoals.filter(goal => goal.active).map(goal => goal.businessGoalKey).sort();
     if (JSON.stringify(active) !== JSON.stringify([...snapshot.publishedGoalKeys].sort())) {
@@ -37,7 +37,7 @@ export class P5PinnedCatalogReader {
     return checked.document;
   }
 
-  project(catalog: CatalogV2Document, versionId: string, provisional: readonly string[] = [], includeActions = true): P5CatalogProjection {
+  project(catalog: BusinessCatalogDocument, versionId: string, provisional: readonly string[] = [], includeActions = true): P5CatalogProjection {
     const safeText = (value: string, max: number): string => sanitizeKnowledgeText(value).slice(0, max);
     return {
       versionId,
@@ -79,7 +79,7 @@ export class P5CatalogEnvelopeEnricher implements ModelEnvelopeEnricher {
       ? catalog.sheets.ToolBindings.filter(row => row.enabled
         && row.goalKey === trustedState.goalKey && row.stageKey === trustedState.stageKey
         && row.sideEffectClass !== 'read_only'
-        && trustedState.consentScope === `${catalogV2VersionRef(catalog)}:${row.toolKey}`)
+        && trustedState.consentScope === `${businessCatalogVersionRef(catalog)}:${row.toolKey}`)
         .map(row => row.toolKey) : [];
     const projection = this.catalogReader.project(catalog, pinned.catalogVersionId,
       pinned.provisionalGoalKeys ?? [], permitted.length > 0);

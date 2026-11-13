@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 
-export const CATALOG_V2_SCHEMA_VERSION = 2 as const;
+export const BUSINESS_CATALOG_SCHEMA_VERSION = 2 as const;
 
 const key = z.string().trim().regex(/^[a-z][a-z0-9._-]{1,79}$/u);
 const label = z.string().trim().min(1).max(500);
@@ -178,14 +178,14 @@ const document = z.object({
   sheets,
 }).strict();
 
-export type CatalogV2Document = z.infer<typeof document>;
-export type CatalogV2SheetName = keyof typeof sheetSchemas;
-export const catalogV2SheetNames: readonly CatalogV2SheetName[] = Object.keys(sheetSchemas) as CatalogV2SheetName[];
+export type BusinessCatalogDocument = z.infer<typeof document>;
+export type BusinessCatalogSheetName = keyof typeof sheetSchemas;
+export const businessCatalogSheetNames: readonly BusinessCatalogSheetName[] = Object.keys(sheetSchemas) as BusinessCatalogSheetName[];
 
-export interface CatalogV2ValidationResult {
+export interface BusinessCatalogValidationResult {
   ok: boolean;
   errors: string[];
-  document: CatalogV2Document | null;
+  document: BusinessCatalogDocument | null;
 }
 
 const issueText = (issue: z.core.$ZodIssue): string => {
@@ -193,7 +193,7 @@ const issueText = (issue: z.core.$ZodIssue): string => {
   return `${path}: ${issue.message}`;
 };
 
-const crossReferenceErrors = (catalog: CatalogV2Document): string[] => {
+const crossReferenceErrors = (catalog: BusinessCatalogDocument): string[] => {
   const errors: string[] = [];
   const goals = new Set(catalog.sheets.BusinessGoals.map(row => row.businessGoalKey));
   const categories = new Set(catalog.sheets.IntentCategories.map(row => row.categoryKey));
@@ -245,7 +245,7 @@ const crossReferenceErrors = (catalog: CatalogV2Document): string[] => {
   return errors;
 };
 
-export const validateCatalogV2 = (input: unknown): CatalogV2ValidationResult => {
+export const validateBusinessCatalog = (input: unknown): BusinessCatalogValidationResult => {
   const parsed = document.safeParse(input);
   if (!parsed.success) return { ok: false, errors: parsed.error.issues.map(issueText), document: null };
   const errors = crossReferenceErrors(parsed.data);
@@ -260,9 +260,9 @@ const canonicalize = (value: unknown): unknown => {
   return value;
 };
 
-export const canonicalCatalogV2Json = (catalog: CatalogV2Document): string => JSON.stringify(canonicalize(catalog));
-export const catalogV2Sha256 = (catalog: CatalogV2Document): string => createHash('sha256').update(canonicalCatalogV2Json(catalog), 'utf8').digest('hex');
-export const catalogV2VersionRef = (catalog: CatalogV2Document): string => `${catalog.manifest.catalogKey}:r${catalog.manifest.revision}:${catalogV2Sha256(catalog)}`;
+export const canonicalBusinessCatalogJson = (catalog: BusinessCatalogDocument): string => JSON.stringify(canonicalize(catalog));
+export const businessCatalogSha256 = (catalog: BusinessCatalogDocument): string => createHash('sha256').update(canonicalBusinessCatalogJson(catalog), 'utf8').digest('hex');
+export const businessCatalogVersionRef = (catalog: BusinessCatalogDocument): string => `${catalog.manifest.catalogKey}:r${catalog.manifest.revision}:${businessCatalogSha256(catalog)}`;
 
 export interface LegacyCatalogMigrationCandidate {
   candidateId: string;

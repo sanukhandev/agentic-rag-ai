@@ -1,4 +1,4 @@
-import { catalogV2VersionRef, type CatalogV2Document } from '../catalog/catalog.js';
+import { businessCatalogVersionRef, type BusinessCatalogDocument } from '../catalog/catalog.js';
 import type {
   CandidateActionProposal, ModelCandidate, ProposalValidator, SessionSnapshot, TrustedActor, VerifiedFact,
 } from '../contracts.js';
@@ -52,7 +52,7 @@ function directCustomerSpan(message: string, proposed: string): boolean {
   return false;
 }
 
-function authoritativeFactRequirements(catalog: CatalogV2Document, goalKey: string): Set<string> {
+function authoritativeFactRequirements(catalog: BusinessCatalogDocument, goalKey: string): Set<string> {
   return new Set(catalog.sheets.RequirementPolicies.filter(row => row.goalKey === goalKey
     && row.type === 'fact' && row.sourceOfTruth === 'customer').map(row => row.requirementKey));
 }
@@ -107,7 +107,7 @@ export class P5ProposalValidator implements ProposalValidator {
       || state.sessionRevision !== snapshot.revision || state.catalogVersionId !== snapshot.catalogVersionId
       || state.goalKey !== candidate.goalCandidateKeys[0]
       || !state.confirmedGoal || !state.customerAuthorized || !state.consentGranted
-      || state.consentScope !== `${catalogV2VersionRef(catalog)}:${proposed.actionKey}`) return null;
+      || state.consentScope !== `${businessCatalogVersionRef(catalog)}:${proposed.actionKey}`) return null;
     const binding = catalog.sheets.ToolBindings.find(row => row.toolKey === proposed.actionKey
       && row.goalKey === state.goalKey && row.stageKey === state.stageKey
       && row.enabled && row.sideEffectClass !== 'read_only'
